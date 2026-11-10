@@ -1,28 +1,28 @@
-# dev-doctor
+# dev-diagnosis
 
 One command that diagnoses your repo, your commands, your cache and your tests. It runs four checks that used to be four separate tools — whether an AI coding agent would read files it should not (`context`), why a CLI command is missing (`path`), whether a build cache actually pays (`cache`), and which tests are flaky (`flakes`) — and prints one report with a verdict per check. It is offline, has no runtime dependencies (Node.js standard library only), and works on Linux, macOS and Windows.
 
 ## Install and run
 
 ```sh
-npx dev-doctor-cli
+npx dev-diagnosis-cli
 ```
 
 Or install it once and use it anywhere:
 
 ```sh
-npm install -g dev-doctor-cli
-dev-doctor all
+npm install -g dev-diagnosis-cli
+dev-diagnosis all
 ```
 
-`dev-doctor` with no arguments is the same as `dev-doctor all` on the current directory. Each check is also available on its own:
+`dev-diagnosis` with no arguments is the same as `dev-diagnosis all` on the current directory. Each check is also available on its own:
 
 ```sh
-dev-doctor context [path]                        # files an AI agent should not read
-dev-doctor path <command>                        # why a CLI command is missing
-dev-doctor cache -- <build-command...>           # cold vs warm timing for a build cache
-dev-doctor flakes <junit-dir>                    # flaky tests from JUnit XML across runs
-dev-doctor all [path] --command <name> --flakes <dir> -- <build-command...>
+dev-diagnosis context [path]                        # files an AI agent should not read
+dev-diagnosis path <command>                        # why a CLI command is missing
+dev-diagnosis cache -- <build-command...>           # cold vs warm timing for a build cache
+dev-diagnosis flakes <junit-dir>                    # flaky tests from JUnit XML across runs
+dev-diagnosis all [path] --command <name> --flakes <dir> -- <build-command...>
 ```
 
 `all` always runs `context` on `[path]` (default: the current directory) and runs `path`, `flakes` and `cache` when their input is given. Checks without their input are listed as skipped, with the command that would run them, instead of silently pretending they ran. `--json` gives machine-readable output for `context`, `path`, `flakes` and `all`.
@@ -31,14 +31,14 @@ Exit codes: `0` every check that ran passed; `1` a check found something to fix 
 
 ## Example
 
-The repo ships a small demo project in `examples/demo-repo` (a build output, a log, a lockfile and a 1.7 MB data dump) and two JUnit runs in `examples/runs`. `npm run example` runs `dev-doctor all` on it. This is its real output, copied verbatim (paths and cache timings vary by machine):
+The repo ships a small demo project in `examples/demo-repo` (a build output, a log, a lockfile and a 1.7 MB data dump) and two JUnit runs in `examples/runs`. `npm run example` runs `dev-diagnosis all` on it. This is its real output, copied verbatim (paths and cache timings vary by machine):
 
 ```
-$ dev-doctor all examples/demo-repo --command node --flakes examples/runs -- node build.mjs
-dev-doctor — /home/hatch/workspace/dev-doctor-build/dev-doctor/examples/demo-repo
+$ dev-diagnosis all examples/demo-repo --command node --flakes examples/runs -- node build.mjs
+dev-diagnosis — /home/hatch/workspace/dev-diagnosis-build/dev-diagnosis/examples/demo-repo
 
 == context ==
-Repo: /home/hatch/workspace/dev-doctor-build/dev-doctor/examples/demo-repo
+Repo: /home/hatch/workspace/dev-diagnosis-build/dev-diagnosis/examples/demo-repo
 Files: 9  Size: 1.68 MB  Score: 75/100 — Some context noise found
   build output: 98 B (0%) — lost 0 of 40
   large files: 1.68 MB (99.9%) — lost 25 of 25
@@ -72,7 +72,7 @@ com.example.CheckoutTest::appliesCoupon             1/2     2      new  passed-o
 FAIL  1 flaky, 1 always-failing across 2 runs
 
 == cache ==
-Cache dir: /home/hatch/workspace/dev-doctor-build/dev-doctor/examples/demo-repo/.cache
+Cache dir: /home/hatch/workspace/dev-diagnosis-build/dev-diagnosis/examples/demo-repo/.cache
 Command: node build.mjs
 Cold: 234 ms  Warm: 80 ms  Saved: 154 ms (66%)
 Verdict: cache pays — warm run is 154 ms (66%) faster than cold
@@ -114,7 +114,7 @@ Requires Node.js 18 or later. CI runs the tests and the demo on Node 18, 20, 22 
 
 ## Credits
 
-dev-doctor merges four tools by the same author, each of which keeps working on its own:
+dev-diagnosis merges four tools by the same author, each of which keeps working on its own:
 
 - [ai-context-doctor](https://github.com/WJDdidi-1/ai-context-doctor) — the context classification, the category weights and the score; the `.aiignore` fix.
 - [cli-path-doctor](https://github.com/WJDdidi-1/cli-path-doctor) — the four shell contexts, `PATHEXT` lookup, shadowed copies and the toolchain search.
