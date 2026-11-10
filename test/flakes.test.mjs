@@ -30,7 +30,7 @@ const RUN_2 = `<?xml version="1.0" encoding="UTF-8"?>
 </testsuites>`;
 
 function writeRuns(files) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-doctor-runs-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-diagnosis-runs-'));
   for (const [relative, content] of Object.entries(files)) {
     const full = path.join(root, relative);
     fs.mkdirSync(path.dirname(full), { recursive: true });
@@ -85,7 +85,7 @@ test('scanRuns: ranks always-failing above passed-on-retry, and classifies both'
 });
 
 test('scanRuns: a directory with no XML is an error', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-doctor-runs-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-diagnosis-runs-'));
   assert.throws(() => scanRuns(root), /no JUnit XML files found/);
 });
 

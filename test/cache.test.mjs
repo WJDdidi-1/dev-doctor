@@ -23,7 +23,7 @@ if (fs.existsSync(out)) {
 `;
 
 function makeProject() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-doctor-cache-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-diagnosis-cache-'));
   fs.mkdirSync(path.join(root, '.cache'), { recursive: true });
   fs.writeFileSync(path.join(root, '.cache', 'out.txt'), 'built\n');
   fs.writeFileSync(path.join(root, 'build.mjs'), BUILD_SCRIPT);
@@ -77,6 +77,6 @@ test('runCacheCheck: needs a build command', () => {
 test('detectCacheDir: finds .cache, and returns null when there is none', () => {
   const root = makeProject();
   assert.equal(detectCacheDir(root), path.join(root, '.cache'));
-  const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-doctor-cache-'));
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-diagnosis-cache-'));
   assert.equal(detectCacheDir(empty), null);
 });

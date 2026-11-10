@@ -6,7 +6,7 @@ import test from 'node:test';
 import { classifyPath, scanDirectory } from '../lib/context.mjs';
 
 function makeRepo(files) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-doctor-context-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-diagnosis-context-'));
   for (const [relative, content] of Object.entries(files)) {
     const full = path.join(root, relative);
     fs.mkdirSync(path.dirname(full), { recursive: true });
@@ -72,7 +72,7 @@ test('scanDirectory: a repo that is entirely build output scores 60, the floor',
 });
 
 test('scanDirectory: a missing directory is an error, not a clean score', () => {
-  assert.throws(() => scanDirectory(path.join(os.tmpdir(), 'dev-doctor-does-not-exist')), /directory not found/);
+  assert.throws(() => scanDirectory(path.join(os.tmpdir(), 'dev-diagnosis-does-not-exist')), /directory not found/);
 });
 
 test('scanDirectory: .git and node_modules are skipped', () => {
