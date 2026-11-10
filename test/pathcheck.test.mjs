@@ -20,12 +20,22 @@ function makeBin(dir, name, content = '#!/bin/sh\nexit 0\n') {
   return full;
 }
 
+function assertSamePath(actual, expected) {
+  // Windows paths are case-insensitive: PATHEXT spells the suffix .CMD
+  // while the fixture file is .cmd, and both spellings are the same file.
+  if (process.platform === 'win32') {
+    assert.equal(String(actual).toLowerCase(), String(expected).toLowerCase());
+  } else {
+    assert.equal(actual, expected);
+  }
+}
+
 test('lookupCommand: finds an executable on PATH', () => {
   const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-diagnosis-bin-'));
   const target = makeBin(bin, 'mytool');
   const result = lookupCommand('mytool', bin);
   assert.equal(result.resolved, true);
-  assert.equal(result.path, target);
+  assertSamePath(result.path, target);
 });
 
 test('lookupCommand: a missing command says so', () => {
@@ -60,9 +70,9 @@ test('findCommandCopies: the first copy wins, later copies are shadowed', () => 
   const delimiter = process.platform === 'win32' ? ';' : ':';
   const result = findCommandCopies('mytool', [first, second].join(delimiter));
   assert.equal(result.copies.length, 2);
-  assert.equal(result.winner.path, firstTool);
+  assertSamePath(result.winner.path, firstTool);
   assert.equal(result.shadowed.length, 1);
-  assert.equal(result.shadowed[0].path, secondTool);
+  assertSamePath(result.shadowed[0].path, secondTool);
 });
 
 test('findCommandCopies: two PATH entries pointing at the same file count once', () => {
