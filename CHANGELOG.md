@@ -4,7 +4,11 @@
 
 - Docs: README now has npm version, CI, license and Node badges, and the
   example output is regenerated verbatim — its paths match the repo layout.
-- No code changes; the CLI is unchanged from 0.1.0.
+- Fix: the demo build and the cache test fixture now simulate 400 ms of
+  work (was 150 ms), so the cache check's verdict stays decisive even on
+  loaded CI machines — 0.1.1's first CI run failed one job (macOS, Node 22)
+  because a 41 ms saving fell under the 50 ms "cache pays" threshold.
+- No other code changes; the CLI is unchanged from 0.1.0.
 
 ## 0.1.0 — 2026-11-10
 

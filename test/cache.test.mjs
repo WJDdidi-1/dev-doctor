@@ -13,8 +13,10 @@ const out = path.join(cacheDir, 'out.txt');
 if (fs.existsSync(out)) {
   console.log('cache hit');
 } else {
-  // Simulate real work that a cache would skip.
-  const until = Date.now() + 150;
+  // Simulate real work that a cache would skip. 400 ms, so the
+  // cold-vs-warm gap dwarfs Node startup time and stays decisive
+  // even on a loaded CI machine.
+  const until = Date.now() + 400;
   while (Date.now() < until) { /* busy wait, deterministic */ }
   fs.mkdirSync(cacheDir, { recursive: true });
   fs.writeFileSync(out, 'built\\n');

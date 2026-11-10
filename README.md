@@ -79,9 +79,9 @@ FAIL  1 flaky, 1 always-failing across 2 runs
 == cache ==
 Cache dir: /home/hatch/workspace/dev-doctor-build/dev-doctor/examples/demo-repo/.cache
 Command: node build.mjs
-Cold: 387 ms  Warm: 296 ms  Saved: 91 ms (24%)
-Verdict: cache pays — warm run is 91 ms (24%) faster than cold
-PASS  cache pays: cold 387 ms, warm 296 ms (warm run is 91 ms (24%) faster than cold)
+Cold: 491 ms  Warm: 90 ms  Saved: 401 ms (82%)
+Verdict: cache pays — warm run is 401 ms (82%) faster than cold
+PASS  cache pays: cold 491 ms, warm 90 ms (warm run is 401 ms (82%) faster than cold)
 
 Overall: FAIL — see the checks above
 ```
