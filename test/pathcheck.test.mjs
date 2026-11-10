@@ -9,8 +9,13 @@ import {
 
 function makeBin(dir, name, content = '#!/bin/sh\nexit 0\n') {
   fs.mkdirSync(dir, { recursive: true });
-  const full = path.join(dir, name);
-  fs.writeFileSync(full, content);
+  // Windows cannot execute an extensionless file: give it a .cmd suffix
+  // so PATHEXT lookup can resolve it, and return the real file path.
+  const fileName = process.platform === 'win32' && path.extname(name) === ''
+    ? `${name}.cmd` : name;
+  const full = path.join(dir, fileName);
+  fs.writeFileSync(full, process.platform === 'win32' && fileName.endsWith('.cmd')
+    ? '@echo off\r\nexit /b 0\r\n' : content);
   fs.chmodSync(full, 0o755);
   return full;
 }
@@ -50,14 +55,14 @@ test('lookupCommand: a broken symlink is reported as broken', () => {
 test('findCommandCopies: the first copy wins, later copies are shadowed', () => {
   const first = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-diagnosis-bin1-'));
   const second = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-diagnosis-bin2-'));
-  makeBin(first, 'mytool');
-  makeBin(second, 'mytool');
+  const firstTool = makeBin(first, 'mytool');
+  const secondTool = makeBin(second, 'mytool');
   const delimiter = process.platform === 'win32' ? ';' : ':';
   const result = findCommandCopies('mytool', [first, second].join(delimiter));
   assert.equal(result.copies.length, 2);
-  assert.equal(result.winner.path, path.join(first, 'mytool'));
+  assert.equal(result.winner.path, firstTool);
   assert.equal(result.shadowed.length, 1);
-  assert.equal(result.shadowed[0].path, path.join(second, 'mytool'));
+  assert.equal(result.shadowed[0].path, secondTool);
 });
 
 test('findCommandCopies: two PATH entries pointing at the same file count once', () => {
