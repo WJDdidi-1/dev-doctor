@@ -1,5 +1,10 @@
 # dev-diagnosis
 
+[![npm version](https://img.shields.io/npm/v/dev-diagnosis-cli.svg)](https://www.npmjs.com/package/dev-diagnosis-cli)
+[![CI](https://github.com/WJDdidi-1/dev-doctor/actions/workflows/ci.yml/badge.svg)](https://github.com/WJDdidi-1/dev-doctor/actions/workflows/ci.yml)
+[![license](https://img.shields.io/github/license/WJDdidi-1/dev-doctor.svg)](https://github.com/WJDdidi-1/dev-doctor/blob/main/LICENSE)
+[![node](https://img.shields.io/node/v/dev-diagnosis-cli.svg)](https://www.npmjs.com/package/dev-diagnosis-cli)
+
 One command that diagnoses your repo, your commands, your cache and your tests. It runs four checks that used to be four separate tools — whether an AI coding agent would read files it should not (`context`), why a CLI command is missing (`path`), whether a build cache actually pays (`cache`), and which tests are flaky (`flakes`) — and prints one report with a verdict per check. It is offline, has no runtime dependencies (Node.js standard library only), and works on Linux, macOS and Windows.
 
 ## Install and run
@@ -35,10 +40,10 @@ The repo ships a small demo project in `examples/demo-repo` (a build output, a l
 
 ```
 $ dev-diagnosis all examples/demo-repo --command node --flakes examples/runs -- node build.mjs
-dev-diagnosis — /home/hatch/workspace/dev-diagnosis-build/dev-diagnosis/examples/demo-repo
+dev-diagnosis — /home/hatch/workspace/dev-doctor-build/dev-doctor/examples/demo-repo
 
 == context ==
-Repo: /home/hatch/workspace/dev-diagnosis-build/dev-diagnosis/examples/demo-repo
+Repo: /home/hatch/workspace/dev-doctor-build/dev-doctor/examples/demo-repo
 Files: 9  Size: 1.68 MB  Score: 75/100 — Some context noise found
   build output: 98 B (0%) — lost 0 of 40
   large files: 1.68 MB (99.9%) — lost 25 of 25
@@ -72,11 +77,11 @@ com.example.CheckoutTest::appliesCoupon             1/2     2      new  passed-o
 FAIL  1 flaky, 1 always-failing across 2 runs
 
 == cache ==
-Cache dir: /home/hatch/workspace/dev-diagnosis-build/dev-diagnosis/examples/demo-repo/.cache
+Cache dir: /home/hatch/workspace/dev-doctor-build/dev-doctor/examples/demo-repo/.cache
 Command: node build.mjs
-Cold: 234 ms  Warm: 80 ms  Saved: 154 ms (66%)
-Verdict: cache pays — warm run is 154 ms (66%) faster than cold
-PASS  cache pays: cold 234 ms, warm 80 ms (warm run is 154 ms (66%) faster than cold)
+Cold: 387 ms  Warm: 296 ms  Saved: 91 ms (24%)
+Verdict: cache pays — warm run is 91 ms (24%) faster than cold
+PASS  cache pays: cold 387 ms, warm 296 ms (warm run is 91 ms (24%) faster than cold)
 
 Overall: FAIL — see the checks above
 ```

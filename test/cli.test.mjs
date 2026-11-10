@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+
+const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+const pkgVersion = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')).version;
 
 const bin = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'dev-diagnosis.js');
 const demoRepo = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'examples', 'demo-repo');
@@ -20,10 +24,10 @@ test('cli: --help lists all four checks', () => {
   }
 });
 
-test('cli: --version prints 0.1.0', () => {
+test('cli: --version prints the package version', () => {
   const result = run(['--version']);
   assert.equal(result.status, 0);
-  assert.equal(result.stdout.trim(), '0.1.0');
+  assert.equal(result.stdout.trim(), pkgVersion);
 });
 
 test('cli: an unknown command is a usage error', () => {
