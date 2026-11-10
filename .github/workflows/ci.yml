@@ -37,5 +37,5 @@ jobs:
           cd smoke
           npm init --yes > /dev/null
           npm install --no-audit --no-fund ./package.tgz
-          node node_modules/dev-diagnosis/bin/dev-diagnosis.js --version
-          node node_modules/dev-diagnosis/bin/dev-diagnosis.js --help > /dev/null
+          node node_modules/dev-diagnosis-cli/bin/dev-diagnosis.js --version
+          node node_modules/dev-diagnosis-cli/bin/dev-diagnosis.js --help > /dev/null
