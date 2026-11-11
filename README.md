@@ -58,6 +58,7 @@ Worth a look before sharing:
   .env.example — environment template (usually safe to share)
 Fix: add these to .aiignore (or the agent's ignore list):
   *.log
+  data/export.json
   dist/
   package-lock.json
 FAIL  some context noise found (score 75/100)
@@ -92,7 +93,7 @@ The demo repo is intentionally noisy, so `all` exits 1: the context and flakes c
 
 ### `context` — what an AI agent should not read
 
-Walks the repo (skipping `.git`, `node_modules` and other hidden directories) and classifies every file: build output, large files over 1 MB, lockfiles, logs, binary payloads, secret-like files and environment templates. It prints a 0–100 score, the bytes lost per category, the noisy files, the files worth a look before sharing, and the `.aiignore` entries that would fix it. Build-output directories are reported by their full path from the repo root (`packages/foo/dist/`, not a bare `dist/`) and rolled up into one row per directory, so the entry `--fix` writes matches nested build output too. Files the repo's `.aiignore` already lists are excluded from the scan entirely — they are what the agent will not be handed, so they are not noise any more. `context --fix` writes the suggestions into `.aiignore` for you; `--json` includes the fix outcome in the output.
+Walks the repo (skipping `.git`, `node_modules` and other hidden directories) and classifies every file: build output, large files over 1 MB, lockfiles, logs, binary payloads, secret-like files and environment templates. It prints a 0–100 score, the bytes lost per category, the noisy files, the files worth a look before sharing, and the `.aiignore` entries that would fix it. Build-output directories are reported by their full path from the repo root (`packages/foo/dist/`, not a bare `dist/`) and rolled up into one row per directory, so the entry `--fix` writes matches nested build output too. A large file is fixed by its exact path from the repo root — no glob can single one file out — so `--fix` followed by a re-scan comes back clean even when the noise is a single oversized file. Files the repo's `.aiignore` already lists are excluded from the scan entirely — they are what the agent will not be handed, so they are not noise any more. `context --fix` writes the suggestions into `.aiignore` for you; `--json` includes the fix outcome in the output.
 
 The score is the *noise-only* part of ai-context-doctor's score: 100 minus the category-weighted share of noise bytes (build 40, large 25, lockfile 20, log 15). The full ai-context-doctor score also weighs context volume, one file dominating, file sprawl and binary payloads, so its composite number reads lower on the same repo. The file classification itself is the same.
 
@@ -111,7 +112,7 @@ Reads JUnit XML across CI runs — each subdirectory of `<junit-dir>` is one run
 ## Development
 
 ```sh
-npm test            # node:test, no extra dependencies — 53 tests
+npm test            # node:test, no extra dependencies — 54 tests
 npm run example     # run the CLI against the demo fixture
 ```
 

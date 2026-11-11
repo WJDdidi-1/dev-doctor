@@ -1,6 +1,19 @@
 # Changelog
 
-## 0.1.3 — unreleased
+## 0.1.4 — unreleased
+
+- Fix: a large file now carries a suggestion — its exact path from the
+  repo root — so `context --fix` writes it into `.aiignore` and a
+  re-scan comes back clean. Large files used to carry no suggestion, so
+  on any repo with one oversized file the fix wrote everything else and
+  the next scan still failed on the same file, including this project's
+  own demo fixture (its 1.7 MB `data/export.json`). The documented
+  "`--fix` followed by a re-scan comes back clean" promise now holds
+  for every kind of noise. (54 tests.)
+- Docs: the 0.1.3 entry below is now dated — it went live on npm on
+  2026-11-11 but the entry still said "unreleased".
+
+## 0.1.3 — 2026-11-11
 
 - Fix: nested build-output directories are reported by their full path
   from the repo root (`packages/foo/dist/`) instead of a bare `dist/` —

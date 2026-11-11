@@ -22,6 +22,10 @@ test('classifyPath: build output, lockfiles, logs and large files are noise', ()
   assert.equal(classifyPath('package-lock.json').noise.reason, 'lockfile');
   assert.equal(classifyPath('logs/dev.log').noise.reason, 'local log file');
   assert.equal(classifyPath('data/big.bin', 2 * 1024 * 1024).noise.reason, 'large file');
+  // A large file's fix is its exact path: no glob can single it out, and
+  // without a suggestion --fix could never make its repo come back clean.
+  assert.equal(classifyPath('data/big.bin', 2 * 1024 * 1024).suggestion, 'data/big.bin');
+  assert.equal(classifyPath('big.bin', 2 * 1024 * 1024).suggestion, 'big.bin');
 });
 
 test('classifyPath: templates and secret-like files are review, not noise', () => {
@@ -79,6 +83,26 @@ test('scanDirectory: --fix round-trips on nested build output', () => {
   assert.deepEqual(second.suggestions, []);
 });
 
+test('scanDirectory: --fix round-trips on a large file', () => {
+  // Regression: large files used to carry no suggestion, so --fix wrote
+  // everything else and the next scan still failed on the same file —
+  // the documented "fix then re-scan comes back clean" promise did not
+  // hold for any repo with one oversized file, including this project's
+  // own demo fixture.
+  const root = makeRepo({
+    'src/index.js': 'x\n',
+    'data/export.json': 'x'.repeat(2 * 1024 * 1024),
+  });
+  const first = scanDirectory(root);
+  assert.ok(first.suggestions.includes('data/export.json'));
+  const fix = applyAiignore(root, first.suggestions);
+  assert.deepEqual(fix.added, ['data/export.json']);
+  const second = scanDirectory(root);
+  assert.equal(second.score, 100);
+  assert.equal(second.noise.length, 0);
+  assert.deepEqual(second.suggestions, []);
+});
+
 test('scanDirectory: a clean repo scores 100', () => {
   const root = makeRepo({ 'src/index.js': 'console.log("hi");\n', 'README.md': '# hi\n' });
   const result = scanDirectory(root);
@@ -103,6 +127,7 @@ test('scanDirectory: a noisy repo scores below clean and suggests fixes', () => 
   assert.ok(result.suggestions.includes('dist/'));
   assert.ok(result.suggestions.includes('package-lock.json'));
   assert.ok(result.suggestions.includes('*.log'));
+  assert.ok(result.suggestions.includes('data/export.json'));
 });
 
 test('scanDirectory: a repo that is entirely build output scores 60, the floor', () => {
