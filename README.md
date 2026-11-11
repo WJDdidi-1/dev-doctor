@@ -30,7 +30,7 @@ dev-diagnosis flakes <junit-dir>                    # flaky tests from JUnit XML
 dev-diagnosis all [path] --command <name> --flakes <dir> -- <build-command...>
 ```
 
-`all` always runs `context` on `[path]` (default: the current directory) and runs `path`, `flakes` and `cache` when their input is given. Checks without their input are listed as skipped, with the command that would run them, instead of silently pretending they ran. `--json` gives machine-readable output for `context`, `path`, `flakes` and `all`.
+`all` always runs `context` on `[path]` (default: the current directory) and runs `path`, `flakes` and `cache` when their input is given. Checks without their input are listed as skipped, with the command that would run them, instead of silently pretending they ran. A build command on a repo with no cache directory to measure is also listed as skipped rather than failing: nothing to measure is not a problem. `--json` gives machine-readable output for `context`, `path`, `flakes` and `all`.
 
 Exit codes: `0` every check that ran passed; `1` a check found something to fix or could not run; `2` usage error.
 

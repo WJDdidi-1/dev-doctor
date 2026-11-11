@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
@@ -91,4 +93,14 @@ test('cli: all without options runs context and lists the other three as skipped
   assert.match(result.stdout, /== skipped ==/);
   assert.match(result.stdout, /--command/);
   assert.match(result.stdout, /--flakes/);
+});
+
+test('cli: all skips cache when the repo has no cache directory', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-diagnosis-nocache-'));
+  fs.writeFileSync(path.join(dir, 'index.js'), 'console.log(1)\n');
+  const result = run(['all', dir, '--', 'node', '-e', '1']);
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /== skipped ==/);
+  assert.match(result.stdout, /no cache directory found/);
+  assert.match(result.stdout, /Overall: PASS/);
 });

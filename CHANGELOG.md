@@ -8,7 +8,9 @@
   work (was 150 ms), so the cache check's verdict stays decisive even on
   loaded CI machines — 0.1.1's first CI run failed one job (macOS, Node 22)
   because a 41 ms saving fell under the 50 ms "cache pays" threshold.
-- No other code changes; the CLI is unchanged from 0.1.0.
+- Fix: `all` on a repo with no build cache no longer ends in FAIL — a
+  build command with no cache directory to measure is listed as skipped,
+  with the `--cache-dir` hint, instead of a failed cache check. (41 tests.)
 
 ## 0.1.0 — 2026-11-10
 

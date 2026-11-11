@@ -333,8 +333,14 @@ function main(argv) {
           cacheCheck = runCache({ buildCommand: args.buildCommand, cacheDir: args.cacheDir, cwd: root });
           checks.cache = cacheCheck;
         } catch (error) {
-          checks.cache = { result: null, passed: false, verdict: `could not run: ${error.message}`, error: error.message };
-          cacheCheck = checks.cache;
+          if (String(error.message).includes('no cache directory found')) {
+            // Nothing to measure is not a failure: report it as skipped so
+            // `all` on a repo without a build cache does not end in FAIL.
+            skipped.push('cache — no cache directory found in this project; pass --cache-dir <dir> to measure one');
+          } else {
+            checks.cache = { result: null, passed: false, verdict: `could not run: ${error.message}`, error: error.message };
+            cacheCheck = checks.cache;
+          }
         }
       } else {
         skipped.push('cache — add -- <build-command>, for example: dev-diagnosis all -- node build.mjs');
