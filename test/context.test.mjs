@@ -36,6 +36,49 @@ test('classifyPath: Windows-style paths classify the same as POSIX paths', () =>
   assert.equal(classifyPath('dist\\app.js').noise.reason, 'generated build output');
 });
 
+test('classifyPath: a nested build directory is labelled by its full path', () => {
+  // A bare dist/ label would be ambiguous when two parts of the tree each
+  // have one, and the suggestion it produces would not match the nested
+  // directory at all. A top-level directory keeps the short label.
+  const nested = classifyPath('packages/foo/dist/app.js');
+  assert.equal(nested.noise.label, 'packages/foo/dist/');
+  assert.equal(nested.suggestion, 'packages/foo/dist/');
+  assert.equal(classifyPath('dist/app.js').noise.label, 'dist/');
+  assert.equal(classifyPath('dist/app.js').suggestion, 'dist/');
+});
+
+test('scanDirectory: files under one build directory roll up into one row', () => {
+  const root = makeRepo({
+    'src/index.js': 'x\n',
+    'dist/a.js': 'bundled\n'.repeat(100),
+    'dist/b.js': 'bundled\n'.repeat(100),
+    'dist/c.js': 'bundled\n'.repeat(100),
+  });
+  const result = scanDirectory(root);
+  const build = result.noise.filter((item) => item.reason === 'generated build output');
+  assert.equal(build.length, 1);
+  assert.equal(build[0].label, 'dist/');
+  assert.equal(build[0].bytes, 'bundled\n'.repeat(100).length * 3);
+});
+
+test('scanDirectory: --fix round-trips on nested build output', () => {
+  // Regression: --fix used to write a bare dist/ entry, which only
+  // matches top-level build output, so re-scanning a repo whose dist/
+  // lives under packages/foo still failed after the fix.
+  const root = makeRepo({
+    'src/index.js': 'x\n',
+    'packages/foo/dist/app.js': 'bundled\n',
+  });
+  const first = scanDirectory(root);
+  assert.ok(first.suggestions.includes('packages/foo/dist/'));
+  const fix = applyAiignore(root, first.suggestions);
+  assert.deepEqual(fix.added, ['packages/foo/dist/']);
+  const second = scanDirectory(root);
+  assert.equal(second.score, 100);
+  assert.equal(second.noise.length, 0);
+  assert.deepEqual(second.suggestions, []);
+});
+
 test('scanDirectory: a clean repo scores 100', () => {
   const root = makeRepo({ 'src/index.js': 'console.log("hi");\n', 'README.md': '# hi\n' });
   const result = scanDirectory(root);
