@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { classifyPath, scanDirectory } from '../lib/context.mjs';
+import { applyAiignore, classifyPath, matchesAiignore, scanDirectory } from '../lib/context.mjs';
 
 function makeRepo(files) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-diagnosis-context-'));
@@ -73,6 +73,63 @@ test('scanDirectory: a repo that is entirely build output scores 60, the floor',
 
 test('scanDirectory: a missing directory is an error, not a clean score', () => {
   assert.throws(() => scanDirectory(path.join(os.tmpdir(), 'dev-diagnosis-does-not-exist')), /directory not found/);
+});
+
+test('applyAiignore: creates .aiignore with the suggestions', () => {
+  const root = makeRepo({ 'src/index.js': 'x\n' });
+  const fix = applyAiignore(root, ['dist/', 'package-lock.json']);
+  assert.equal(fix.created, true);
+  assert.deepEqual(fix.added, ['dist/', 'package-lock.json']);
+  assert.equal(fs.readFileSync(path.join(root, '.aiignore'), 'utf8'), 'dist/\npackage-lock.json\n');
+});
+
+test('applyAiignore: appends only the missing entries and keeps the rest', () => {
+  const root = makeRepo({ 'src/index.js': 'x\n', '.aiignore': '# mine\npackage-lock.json\n' });
+  const fix = applyAiignore(root, ['dist/', 'package-lock.json', '*.log']);
+  assert.equal(fix.created, false);
+  assert.deepEqual(fix.added, ['*.log', 'dist/']);
+  assert.deepEqual(fix.alreadyPresent, ['package-lock.json']);
+  assert.equal(
+    fs.readFileSync(path.join(root, '.aiignore'), 'utf8'),
+    '# mine\npackage-lock.json\n*.log\ndist/\n',
+  );
+  // A second run adds nothing: applying the fix is idempotent.
+  const again = applyAiignore(root, ['dist/', 'package-lock.json', '*.log']);
+  assert.deepEqual(again.added, []);
+  assert.equal(fs.readFileSync(path.join(root, '.aiignore'), 'utf8'), '# mine\npackage-lock.json\n*.log\ndist/\n');
+});
+
+test('applyAiignore: no suggestions means no file is created', () => {
+  const root = makeRepo({ 'src/index.js': 'x\n' });
+  const fix = applyAiignore(root, []);
+  assert.deepEqual(fix.added, []);
+  assert.equal(fix.created, false);
+  assert.equal(fs.existsSync(path.join(root, '.aiignore')), false);
+});
+
+test('matchesAiignore: directory patterns, globs and basenames', () => {
+  assert.equal(matchesAiignore('dist/app.js', ['dist/']), true);
+  assert.equal(matchesAiignore('src/dist/app.js', ['dist/']), false);
+  assert.equal(matchesAiignore('logs/dev.log', ['*.log']), true);
+  assert.equal(matchesAiignore('docs/package-lock.json', ['package-lock.json']), true);
+  assert.equal(matchesAiignore('.env', ['.env*']), true);
+  assert.equal(matchesAiignore('.env.local', ['.env*']), true);
+  assert.equal(matchesAiignore('src/index.js', ['dist/', '*.log']), false);
+  assert.equal(matchesAiignore('src/index.js', ['# comment', '', '!dist/']), false);
+});
+
+test('scanDirectory: files listed in .aiignore are excluded from the scan', () => {
+  const root = makeRepo({
+    'src/index.js': 'x\n',
+    'dist/app.bundle.js': 'bundled\n'.repeat(500),
+    'package-lock.json': '{}\n',
+    '.aiignore': '# already handled\n' + 'dist/\n' + 'package-lock.json\n',
+  });
+  const result = scanDirectory(root);
+  assert.equal(result.score, 100);
+  assert.equal(result.noise.length, 0);
+  assert.equal(result.files, 2); // src/index.js and .aiignore itself
+  assert.deepEqual(result.suggestions, []);
 });
 
 test('scanDirectory: .git and node_modules are skipped', () => {

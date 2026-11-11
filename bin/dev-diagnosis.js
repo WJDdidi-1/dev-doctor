@@ -15,7 +15,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { scanDirectory, formatBytes } from '../lib/context.mjs';
+import { scanDirectory, applyAiignore, formatBytes } from '../lib/context.mjs';
 import {
   buildContexts, findCommandCopies, fixForDirectory, lookupCommand,
   searchToolchainBins,
@@ -31,8 +31,8 @@ const VERSION = JSON.parse(
 const USAGE = `dev-diagnosis: one diagnosis for your repo, your commands, your cache and your tests.
 
 Usage:
-  dev-diagnosis [all] [path] [--command <name>] [--flakes <dir>] [-- <build-command...>]
-  dev-diagnosis context [path] [--json]
+  dev-diagnosis [all] [path] [--command <name>] [--flakes <dir>] [--fix] [-- <build-command...>]
+  dev-diagnosis context [path] [--json] [--fix]
   dev-diagnosis path <command> [--json]
   dev-diagnosis cache [--cache-dir <dir>] [--cwd <dir>] -- <build-command...>
   dev-diagnosis flakes <runs-dir> [--json] [--top N]
@@ -61,6 +61,10 @@ Commands:
 
 Options:
   --json          machine-readable output (context, path, flakes, all)
+  --fix           write the context check's .aiignore suggestions into
+                  <path>/.aiignore (context and all only). Entries that
+                  are already there are left alone; nothing else in the
+                  file is changed.
   --top N         show only the N highest-ranked flaky tests
   -h, --help      show this help
   -v, --version   print the version
@@ -78,7 +82,7 @@ class UsageError extends Error {
 
 function parseArgs(argv) {
   const parsed = {
-    command: null, positional: [], json: false, help: false, version: false,
+    command: null, positional: [], json: false, fix: false, help: false, version: false,
     commandName: null, flakesDir: null, cacheDir: null, cwd: null, top: null,
     buildCommand: null, error: null,
   };
@@ -90,6 +94,7 @@ function parseArgs(argv) {
       break;
     }
     if (arg === '--json' || arg === '-j') parsed.json = true;
+    else if (arg === '--fix') parsed.fix = true;
     else if (arg === '--help' || arg === '-h') parsed.help = true;
     else if (arg === '--version' || arg === '-v') parsed.version = true;
     else if (arg === '--command') {
@@ -164,6 +169,28 @@ function runContext(target) {
   const result = scanDirectory(target || process.cwd());
   const passed = result.score >= 85;
   return { result, passed, verdict: passed ? 'context is clean' : `${result.status.toLowerCase()} (score ${result.score}/100)` };
+}
+
+// Apply the context check's .aiignore suggestions and record the outcome
+// on the check result, so --json output carries it too.
+function applyContextFix(check) {
+  const fix = applyAiignore(check.result.root, check.result.suggestions);
+  check.result.fix = fix;
+  return fix;
+}
+
+function printFixLine(fix, suggestionCount) {
+  if (fix.added.length > 0) {
+    const noun = fix.added.length === 1 ? 'entry' : 'entries';
+    const lead = fix.created
+      ? `Created .aiignore with ${fix.added.length} ${noun}`
+      : `Added ${fix.added.length} ${noun} to .aiignore`;
+    console.log(`${lead}: ${fix.added.join(', ')}`);
+  } else if (suggestionCount === 0) {
+    console.log('Nothing to add to .aiignore: no suggestions.');
+  } else {
+    console.log('Nothing added: .aiignore already has all suggestions.');
+  }
 }
 
 function printPath(result, json) {
@@ -276,11 +303,23 @@ function main(argv) {
   }
 
   const command = args.command || 'all';
+  if (args.fix && command !== 'context' && command !== 'all') {
+    console.error('Error: --fix only applies to context (and all).');
+    console.error('Run with --help to see the available options.');
+    return 2;
+  }
   try {
     if (command === 'context') {
       const target = args.positional[0];
       const check = runContext(target);
+      // In --json mode the fix must be part of the printed object, so it
+      // runs before printing; in text mode the report prints first, so a
+      // failed write still leaves the diagnosis on screen.
+      if (args.fix && args.json) applyContextFix(check);
       printContext(check.result, args.json);
+      if (args.fix && !args.json) {
+        printFixLine(applyContextFix(check), check.result.suggestions.length);
+      }
       if (!args.json) console.log(verdictLine(check.passed, check.verdict));
       return check.passed ? 0 : 1;
     }
@@ -312,6 +351,12 @@ function main(argv) {
 
       const contextCheck = runContext(root);
       checks.context = contextCheck;
+      let contextFix = null;
+      const getContextFix = () => {
+        if (!contextFix) contextFix = applyContextFix(contextCheck);
+        return contextFix;
+      };
+      if (args.fix && args.json) getContextFix();
       const pathCheck = args.commandName ? runPath(args.commandName) : null;
       if (pathCheck) checks.path = pathCheck;
       else skipped.push('path — pass --command <name>, for example: dev-diagnosis all --command node');
@@ -360,6 +405,7 @@ function main(argv) {
       console.log(`dev-diagnosis — ${root}`);
       console.log(section('context'));
       printContext(contextCheck.result, false);
+      if (args.fix) printFixLine(getContextFix(), contextCheck.result.suggestions.length);
       console.log(verdictLine(contextCheck.passed, contextCheck.verdict));
       if (pathCheck) {
         console.log(section('path'));

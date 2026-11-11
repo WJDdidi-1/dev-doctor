@@ -21,7 +21,7 @@ function run(args, options = {}) {
 test('cli: --help lists all four checks', () => {
   const result = run(['--help']);
   assert.equal(result.status, 0);
-  for (const word of ['context', 'path', 'cache', 'flakes', 'all']) {
+  for (const word of ['context', 'path', 'cache', 'flakes', 'all', '--fix']) {
     assert.ok(result.stdout.includes(word), `help should mention ${word}`);
   }
 });
@@ -93,6 +93,53 @@ test('cli: all without options runs context and lists the other three as skipped
   assert.match(result.stdout, /== skipped ==/);
   assert.match(result.stdout, /--command/);
   assert.match(result.stdout, /--flakes/);
+});
+
+test('cli: context --fix writes .aiignore and is idempotent', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-diagnosis-fix-'));
+  fs.mkdirSync(path.join(dir, 'dist'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'dist', 'app.js'), 'bundled\n');
+  fs.writeFileSync(path.join(dir, 'package-lock.json'), '{}\n');
+  fs.writeFileSync(path.join(dir, 'src.js'), 'x\n');
+  const first = run(['context', dir, '--fix']);
+  assert.equal(first.status, 1); // the noise is still there; the fix only hides it from the agent
+  assert.match(first.stdout, /Created \.aiignore with 2 entries/);
+  const ignore = fs.readFileSync(path.join(dir, '.aiignore'), 'utf8');
+  assert.ok(ignore.includes('dist/\n'), ignore);
+  assert.ok(ignore.includes('package-lock.json\n'), ignore);
+  // A second scan honours .aiignore: the noise is hidden, the repo is
+  // clean, and there is nothing left to add.
+  const second = run(['context', dir, '--fix']);
+  assert.equal(second.status, 0);
+  assert.match(second.stdout, /Score: 100\/100/);
+  assert.match(second.stdout, /Nothing to add to \.aiignore: no suggestions/);
+  assert.equal(fs.readFileSync(path.join(dir, '.aiignore'), 'utf8'), ignore);
+});
+
+test('cli: context --json --fix reports the fix in the JSON', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-diagnosis-fix-json-'));
+  fs.mkdirSync(path.join(dir, 'dist'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'dist', 'app.js'), 'bundled\n');
+  const result = run(['context', dir, '--json', '--fix']);
+  assert.equal(result.status, 1);
+  const parsed = JSON.parse(result.stdout);
+  assert.deepEqual(parsed.fix.added, ['dist/']);
+  assert.equal(parsed.fix.created, true);
+});
+
+test('cli: all --fix applies the context fix', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-diagnosis-fix-all-'));
+  fs.writeFileSync(path.join(dir, 'package-lock.json'), '{}\n');
+  const result = run(['all', dir, '--fix']);
+  assert.equal(result.status, 1);
+  assert.match(result.stdout, /Created \.aiignore with 1 entry: package-lock\.json/);
+  assert.equal(fs.readFileSync(path.join(dir, '.aiignore'), 'utf8'), 'package-lock.json\n');
+});
+
+test('cli: --fix on a check without an .aiignore fix is a usage error', () => {
+  const result = run(['path', 'node', '--fix']);
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /--fix only applies to context/);
 });
 
 test('cli: all skips cache when the repo has no cache directory', () => {

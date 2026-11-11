@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.2 — 2026-11-11
+
+- New: `context --fix` (and `all --fix`) writes the `.aiignore`
+  suggestions into `<path>/.aiignore` instead of only printing them —
+  entries already there are left alone, nothing else in the file is
+  touched, and no file is created when there is nothing to add. The fix
+  outcome is included in `--json` output.
+- Fix: the context scan now honours the repo's `.aiignore` — files it
+  lists are excluded from the scan entirely, so applying the fix and
+  re-scanning comes back clean instead of failing on the same noise
+  forever. (50 tests.)
+
 ## 0.1.1 — 2026-11-11
 
 - Docs: README now has npm version, CI, license and Node badges, and the
