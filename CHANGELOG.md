@@ -1,6 +1,17 @@
 # Changelog
 
-## 0.1.5 — unreleased
+## 0.1.6 — unreleased
+
+- Fix: an empty JUnit file (0 bytes, whitespace only, or a declaration/comment
+  and nothing else) no longer parses as a clean run of zero tests — the XML
+  reader now requires a root element, so the file is reported as
+  "no root element", listed in the warnings, and the `flakes` check fails
+  instead of silently reporting on half-read data. A genuinely empty report
+  (`<testsuites></testsuites>`) still parses to zero tests. (62 tests.)
+- Docs: the 0.1.5 entry below is now dated — it went live on npm on
+  2026-11-11 but the entry still said "unreleased".
+
+## 0.1.5 — 2026-11-11
 
 - Fix: a JUnit file that cannot be parsed no longer passes silently —
   `flakes` used to collect the parse error into a warnings list nothing

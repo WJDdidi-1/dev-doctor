@@ -64,6 +64,16 @@ test('parseJunitText: broken XML is an error with a location', () => {
   assert.throws(() => parseJunitText('<testsuites><testcase>'), /unclosed tag/);
 });
 
+test('parseJunitText: an empty file, whitespace, or a declaration alone is an error', () => {
+  for (const text of ['', '   \n  ', '<?xml version="1.0"?>\n', '<!-- just a comment -->\n']) {
+    assert.throws(() => parseJunitText(text), /no root element/);
+  }
+});
+
+test('parseJunitText: an empty report element still parses to zero tests', () => {
+  assert.deepEqual(parseJunitText('<testsuites></testsuites>'), []);
+});
+
 test('wilsonLowerBound: more evidence means a higher lower bound', () => {
   assert.equal(wilsonLowerBound(0, 0), 0);
   assert.ok(wilsonLowerBound(2, 2) > wilsonLowerBound(1, 2));
@@ -114,4 +124,14 @@ test('scanRuns: a run whose only file is broken still counts, with a warning', (
   assert.equal(result.totals.runs, 1);
   assert.equal(result.totals.tests, 0);
   assert.equal(result.warnings.length, 1);
+});
+
+test('scanRuns: an empty XML file is a warning, not a silent skip', () => {
+  const root = writeRuns({ 'run-01/empty.xml': '', 'run-02/results.xml': RUN_2 });
+  const result = scanRuns(root);
+  assert.equal(result.totals.runs, 2);
+  assert.equal(result.totals.tests, 3);
+  assert.equal(result.warnings.length, 1);
+  assert.match(result.warnings[0], /empty\.xml/);
+  assert.match(result.warnings[0], /no root element/);
 });
