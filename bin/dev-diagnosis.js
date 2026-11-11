@@ -247,13 +247,21 @@ function printFlakes(result, top, json) {
 function runFlakes(dir) {
   if (!dir) throw new UsageError('flakes needs a runs directory, for example: dev-diagnosis flakes examples/runs');
   const result = scanRuns(dir);
-  const passed = result.totals.flaky === 0 && result.totals.alwaysFailing === 0;
+  const unparsable = result.warnings.length;
+  // A file that could not be parsed means the verdict is based on
+  // incomplete data: "no flaky tests" on a half-read run set is not a
+  // pass, so the check fails and the verdict says how many files were
+  // unreadable. The warnings themselves are printed with the table.
+  const passed = result.totals.flaky === 0 && result.totals.alwaysFailing === 0 && unparsable === 0;
+  const base = result.totals.flaky === 0 && result.totals.alwaysFailing === 0
+    ? `no flaky tests across ${result.totals.runs} runs`
+    : `${result.totals.flaky} flaky, ${result.totals.alwaysFailing} always-failing across ${result.totals.runs} runs`;
   return {
     result,
     passed,
-    verdict: passed
-      ? `no flaky tests across ${result.totals.runs} runs`
-      : `${result.totals.flaky} flaky, ${result.totals.alwaysFailing} always-failing across ${result.totals.runs} runs`,
+    verdict: unparsable > 0
+      ? `${base}; ${unparsable} file${unparsable === 1 ? '' : 's'} could not be parsed`
+      : base,
   };
 }
 

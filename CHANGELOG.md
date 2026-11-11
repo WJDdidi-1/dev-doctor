@@ -1,6 +1,21 @@
 # Changelog
 
-## 0.1.4 — unreleased
+## 0.1.5 — unreleased
+
+- Fix: a JUnit file that cannot be parsed no longer passes silently —
+  `flakes` used to collect the parse error into a warnings list nothing
+  ever printed, so a run set of only corrupt XML reported "no flaky
+  tests" and exited 0. The warning is now printed with the file and the
+  parse position, and the check fails with how many files could not be
+  parsed, so the verdict is never based on half-read data. (58 tests.)
+- Docs: a Troubleshooting note for running `npx` inside a checkout of
+  this repo — npx prefers the checkout's own package.json and fails
+  with `dev-diagnosis: not found`; `npm install` does not fix it (no
+  dependencies, so no `node_modules` is created). Run
+  `node bin/dev-diagnosis.js` directly, `npm link`, or run `npx` from
+  another directory.
+
+## 0.1.4 — 2026-11-11
 
 - Fix: a large file now carries a suggestion — its exact path from the
   repo root — so `context --fix` writes it into `.aiignore` and a

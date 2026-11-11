@@ -94,3 +94,24 @@ test('scanRuns: loose XML files directly under the dir are runs of their own', (
   const result = scanRuns(root);
   assert.equal(result.totals.runs, 2);
 });
+
+test('scanRuns: a broken XML file is a warning, not a silent skip', () => {
+  const broken = '<testsuites><testsuite><testcase classname="T" name="t"><failure/></testcase></testsuite>';
+  const root = writeRuns({ 'run-01/broken.xml': broken, 'run-02/results.xml': RUN_2 });
+  const result = scanRuns(root);
+  assert.equal(result.totals.runs, 2);
+  assert.equal(result.totals.tests, 3);
+  assert.equal(result.warnings.length, 1);
+  assert.match(result.warnings[0], /broken\.xml/);
+  assert.match(result.warnings[0], /unclosed tag/);
+  // The file path appears once: the XML error already carries it.
+  assert.equal(result.warnings[0].match(/broken\.xml/g).length, 1);
+});
+
+test('scanRuns: a run whose only file is broken still counts, with a warning', () => {
+  const root = writeRuns({ 'run-01/broken.xml': '<testsuites><testcase>' });
+  const result = scanRuns(root);
+  assert.equal(result.totals.runs, 1);
+  assert.equal(result.totals.tests, 0);
+  assert.equal(result.warnings.length, 1);
+});

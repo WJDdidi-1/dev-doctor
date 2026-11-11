@@ -112,11 +112,26 @@ Reads JUnit XML across CI runs — each subdirectory of `<junit-dir>` is one run
 ## Development
 
 ```sh
-npm test            # node:test, no extra dependencies — 54 tests
+npm test            # node:test, no extra dependencies — 58 tests
 npm run example     # run the CLI against the demo fixture
 ```
 
+There is nothing to install: the CLI has no runtime dependencies, so
+`npm test` works straight after cloning. Run the checkout as
+`node bin/dev-diagnosis.js …` — see Troubleshooting if you reach for
+`npx` inside the checkout.
+
 Requires Node.js 18 or later. CI runs the tests and the demo on Node 18, 20, 22 and 24 across Ubuntu, macOS and Windows, and smoke-tests the packed tarball by installing it in a clean directory. Windows is covered by CI only — the Windows-only code paths (the `cmd.exe` retry for `.cmd`/`.bat` shims, `PATHEXT` lookup) have not been run on a real Windows machine.
+
+## Troubleshooting
+
+**`npx dev-diagnosis-cli` inside a checkout of this repo fails with
+`dev-diagnosis: not found`.** npx sees the checkout's own `package.json`
+— same name, same version — and tries to run the local bin, which only
+exists once the bin is linked. `npm install` does not link it: with no
+dependencies to install, npm creates no `node_modules` at all. Run the
+checkout directly instead — `node bin/dev-diagnosis.js …` — or `npm link`
+to get a `dev-diagnosis` command, or run `npx` from any other directory.
 
 ## Credits
 

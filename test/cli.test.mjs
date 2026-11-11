@@ -72,6 +72,32 @@ test('cli: flakes on the demo runs ranks the always-failing test first', () => {
   assert.match(result.stdout, /appliesCoupon/);
 });
 
+test('cli: flakes with only a broken XML file fails and names the file', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-diagnosis-flakes-broken-'));
+  fs.mkdirSync(path.join(dir, 'run-01'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'run-01', 'broken.xml'), '<testsuites><testsuite><testcase classname="T" name="t"><failure/></testcase></testsuite>');
+  const result = run(['flakes', dir]);
+  assert.equal(result.status, 1);
+  assert.match(result.stdout, /tests: 0/);
+  assert.match(result.stdout, /Warning: 1 file could not be parsed/);
+  assert.match(result.stdout, /broken\.xml/);
+  assert.match(result.stdout, /FAIL/);
+  assert.match(result.stdout, /1 file could not be parsed/);
+});
+
+test('cli: flakes with a broken file next to a clean run still fails', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-diagnosis-flakes-mixed-'));
+  fs.mkdirSync(path.join(dir, 'run-01'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'run-02'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'run-01', 'results.xml'), `<?xml version="1.0"?><testsuites><testsuite><testcase classname="T" name="t"/></testsuite></testsuites>`);
+  fs.writeFileSync(path.join(dir, 'run-02', 'broken.xml'), '<testsuites><testcase>');
+  const result = run(['flakes', dir]);
+  assert.equal(result.status, 1);
+  assert.match(result.stdout, /No flaky tests/);
+  assert.match(result.stdout, /Warning: 1 file could not be parsed/);
+  assert.match(result.stdout, /FAIL/);
+});
+
 test('cli: cache on the demo repo pays', () => {
   const result = run(['cache', '--cwd', demoRepo, '--', 'node', 'build.mjs']);
   assert.equal(result.status, 0);
