@@ -111,7 +111,7 @@ Reads JUnit XML across CI runs — each subdirectory of `<junit-dir>` is one run
 ## Development
 
 ```sh
-npm test            # node:test, no extra dependencies — 40 tests
+npm test            # node:test, no extra dependencies — 41 tests
 npm run example     # run the CLI against the demo fixture
 ```
 
