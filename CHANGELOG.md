@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.3 — unreleased
+
+- Fix: nested build-output directories are reported by their full path
+  from the repo root (`packages/foo/dist/`) instead of a bare `dist/` —
+  the bare entry only matches top-level output, so `--fix` on a repo
+  whose build output lives in a subdirectory wrote an `.aiignore`
+  entry the next scan ignored, and the scan kept failing after the
+  fix. Files under one build directory are also rolled up into a
+  single row instead of one row per file. (53 tests.)
+
 ## 0.1.2 — 2026-11-11
 
 - New: `context --fix` (and `all --fix`) writes the `.aiignore`
@@ -10,14 +20,7 @@
 - Fix: the context scan now honours the repo's `.aiignore` — files it
   lists are excluded from the scan entirely, so applying the fix and
   re-scanning comes back clean instead of failing on the same noise
-  forever.
-- Fix: nested build-output directories are reported by their full path
-  from the repo root (`packages/foo/dist/`) instead of a bare `dist/` —
-  the bare entry only matches top-level output, so `--fix` on a repo
-  whose build output lives in a subdirectory wrote an `.aiignore`
-  entry the next scan ignored, and the scan kept failing after the
-  fix. Files under one build directory are also rolled up into a
-  single row instead of one row per file. (53 tests.)
+  forever. (50 tests.)
 
 ## 0.1.1 — 2026-11-11
 
