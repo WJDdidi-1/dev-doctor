@@ -12,7 +12,9 @@ const actionFile = path.join(repo, 'action.yml');
 const bin = path.join(repo, 'bin', 'dev-diagnosis.js');
 
 test('action: action.yml exists and describes the documented one-step run', () => {
-  const content = fs.readFileSync(actionFile, 'utf8');
+  // A Windows checkout converts line endings to CRLF; normalise first
+  // so the structural patterns below read the same on every platform.
+  const content = fs.readFileSync(actionFile, 'utf8').replace(/\r\n/g, '\n');
   assert.match(content, /^name: dev-diagnosis$/m);
   assert.match(content, /inputs:\n\s+path:/);
   assert.match(content, /args:/);

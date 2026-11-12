@@ -5,12 +5,25 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { tempDir } from '../scripts/support.mjs';
+import { vscodeSettingsPath } from '../lib/setup.mjs';
 import { fileURLToPath } from 'node:url';
 
 const bin = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'dev-diagnosis.js');
 
 function run(args, options = {}) {
   return spawnSync(process.execPath, [bin, ...args], { encoding: 'utf8', ...options });
+}
+
+// A fake agent binary on PATH: detection only checks that the file
+// exists and is executable. On Windows a bare name is never
+// executable — lookup tries the PATHEXT extensions — so the fake is a
+// .cmd file there. It is never run, so the content does not matter.
+function writeFakeBinary(dir, name) {
+  const file = process.platform === 'win32'
+    ? path.join(dir, `${name}.cmd`)
+    : path.join(dir, name);
+  fs.writeFileSync(file, process.platform === 'win32' ? '@echo off\n' : '#!/bin/sh\nexit 0\n');
+  if (process.platform !== 'win32') fs.chmodSync(file, 0o755);
 }
 
 // A HOME with a Claude config (another server, no dev-diagnosis) and a
@@ -28,7 +41,12 @@ function fixtureHome() {
 
 function envFor(home, extraBin) {
   const env = { ...process.env, HOME: home };
-  if (extraBin) env.PATH = `${extraBin}:${process.env.PATH || ''}`;
+  if (process.platform === 'win32') {
+    // VS Code settings live under %APPDATA% on Windows: point it inside
+    // the sandboxed home so the test never touches the real profile.
+    env.APPDATA = path.join(home, 'AppData', 'Roaming');
+  }
+  if (extraBin) env.PATH = `${extraBin}${path.delimiter}${process.env.PATH || ''}`;
   return env;
 }
 
@@ -73,8 +91,7 @@ test('setup: writes the merge, keeps other entries, second run says already wire
 test('setup: a detected binary with no config gets a created config', () => {
   const home = tempDir('dev-diagnosis-setup-bin-');
   const fakeBin = tempDir('dev-diagnosis-setup-fakebin-');
-  fs.writeFileSync(path.join(fakeBin, 'cursor'), '#!/bin/sh\nexit 0\n');
-  fs.chmodSync(path.join(fakeBin, 'cursor'), 0o755);
+  writeFakeBinary(fakeBin, 'cursor');
   const result = run(['setup'], { env: envFor(home, fakeBin) });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /Cursor: created/);
@@ -85,15 +102,18 @@ test('setup: a detected binary with no config gets a created config', () => {
 test('setup: VS Code settings merge under mcp.servers and keep other settings', () => {
   const home = tempDir('dev-diagnosis-setup-vscode-');
   const fakeBin = tempDir('dev-diagnosis-setup-vsbin-');
-  fs.writeFileSync(path.join(fakeBin, 'code'), '#!/bin/sh\nexit 0\n');
-  fs.chmodSync(path.join(fakeBin, 'code'), 0o755);
-  const settingsDir = path.join(home, '.config', 'Code', 'User');
-  fs.mkdirSync(settingsDir, { recursive: true });
-  fs.writeFileSync(path.join(settingsDir, 'settings.json'), JSON.stringify({ 'editor.fontSize': 14 }, null, 2));
-  const result = run(['setup'], { env: envFor(home, fakeBin) });
+  writeFakeBinary(fakeBin, 'code');
+  const env = envFor(home, fakeBin);
+  // Seed the settings where setup looks for them on this platform:
+  // ~/Library/Application Support on macOS, %APPDATA% on Windows,
+  // ~/.config on Linux — the hardcoded Linux path is wrong elsewhere.
+  const settingsPath = vscodeSettingsPath(home, env);
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+  fs.writeFileSync(settingsPath, JSON.stringify({ 'editor.fontSize': 14 }, null, 2));
+  const result = run(['setup'], { env });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /VS Code: merged/);
-  const settings = JSON.parse(fs.readFileSync(path.join(settingsDir, 'settings.json'), 'utf8'));
+  const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
   assert.equal(settings['editor.fontSize'], 14);
   assert.deepEqual(settings.mcp.servers['dev-diagnosis'], { command: 'dev-diagnosis', args: ['--mcp'] });
 });
@@ -130,8 +150,7 @@ test('setup: an unreadable config is left alone and reported', () => {
   const home = tempDir('dev-diagnosis-setup-bad-');
   fs.writeFileSync(path.join(home, '.claude.json'), '{ not json');
   const fakeBin = tempDir('dev-diagnosis-setup-badbin-');
-  fs.writeFileSync(path.join(fakeBin, 'cursor'), '#!/bin/sh\nexit 0\n');
-  fs.chmodSync(path.join(fakeBin, 'cursor'), 0o755);
+  writeFakeBinary(fakeBin, 'cursor');
   const result = run(['setup'], { env: envFor(home, fakeBin) });
   assert.equal(result.status, 1);
   assert.match(result.stdout, /Claude Code: unreadable/);

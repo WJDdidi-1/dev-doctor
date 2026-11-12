@@ -1,0 +1,5 @@
+# Keep the demo fixture byte-identical on every platform: its size is
+# quoted in the README and the tests derive the token estimate and the
+# summary's noise size from it, and CRLF conversion on a Windows
+# checkout would grow it by one byte per line (20,000 lines).
+examples/demo-repo/data/export.json binary

@@ -6,10 +6,20 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { tempDir } from '../scripts/support.mjs';
+import { estimateTokens, formatBytes } from '../lib/context.mjs';
+import { formatTokens } from '../lib/report.mjs';
 import { fileURLToPath } from 'node:url';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pkgVersion = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')).version;
+
+// The demo fixture's listed noise is its one large file. Its byte count
+// is the source of the token estimate and the summary's noise size —
+// read it from the fixture instead of hardcoding a number, so the
+// assertions hold on a Windows checkout too (CRLF conversion grows the
+// file by one byte per line).
+const demoNoiseFile = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'examples', 'demo-repo', 'data', 'export.json');
+const demoNoiseBytes = fs.statSync(demoNoiseFile).size;
 
 const bin = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'dev-diagnosis.js');
 const demoRepo = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'examples', 'demo-repo');
@@ -78,8 +88,8 @@ test('cli: context on the demo repo finds noise and exits 1', () => {
   assert.equal(result.status, 1);
   assert.match(result.stdout, /Score: 75\/100/);
   assert.match(result.stdout, /data\/export\.json/);
-  // The demo's dist/, log and lockfile are each 0% of the 1.68 MB total
-  // and lose 0 points, so they are not listed as noise any more.
+  // The demo's dist/, log and lockfile are each 0% of the total and
+  // lose 0 points, so they are not listed as noise any more.
   assert.doesNotMatch(result.stdout, /dist\//);
   assert.doesNotMatch(result.stdout, /package-lock\.json/);
   assert.match(result.stdout, /FAIL/);
@@ -121,9 +131,9 @@ test('cli: path verdict names the context where a command resolves', () => {
   const emptyDir = path.join(dir, 'empty');
   fs.mkdirSync(binDir);
   fs.mkdirSync(emptyDir);
-  const tool = path.join(binDir, 'mytool');
-  fs.writeFileSync(tool, '#!/bin/sh\necho hi\n');
-  fs.chmodSync(tool, 0o755);
+  const tool = process.platform === 'win32' ? path.join(binDir, 'mytool.cmd') : path.join(binDir, 'mytool');
+  fs.writeFileSync(tool, process.platform === 'win32' ? '@echo off\n' : '#!/bin/sh\necho hi\n');
+  if (process.platform !== 'win32') fs.chmodSync(tool, 0o755);
   const env = {
     ...process.env,
     PATH: emptyDir,
@@ -395,9 +405,9 @@ test('cli: context --json reports the token estimate, null when clean', () => {
   const noisy = run(['context', demoRepo, '--json']);
   assert.equal(noisy.status, 1);
   const parsed = JSON.parse(noisy.stdout);
-  // The demo's listed noise is the 1.68 MB data dump: ~440k tokens at
-  // ~4 bytes per token. The exact byte count is the fixture's, the
-  // heuristic is bytes / 4.
+  // The demo's listed noise is the data dump: the estimate is its byte
+  // count at ~4 bytes per token (see estimateTokens). The range below
+  // is a sanity bound; the exact line is asserted in the next test.
   assert.ok(Number.isInteger(parsed.estimatedTokens));
   assert.ok(parsed.estimatedTokens > 400000 && parsed.estimatedTokens < 500000);
   const dir = tempDir('dev-diagnosis-tokens-clean-');
@@ -410,13 +420,15 @@ test('cli: context --json reports the token estimate, null when clean', () => {
 test('cli: context prints the token estimate line next to the noise', () => {
   const result = run(['context', demoRepo]);
   assert.equal(result.status, 1);
-  assert.match(result.stdout, /Estimated tokens wasted on this noise: ≈ 439k tokens \(estimate, ~4 bytes per token\)/);
+  const expected = formatTokens(estimateTokens(demoNoiseBytes));
+  assert.match(result.stdout, new RegExp(`Estimated tokens wasted on this noise: ≈ ${expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} tokens \\(estimate, ~4 bytes per token\\)`));
 });
 
 test('cli: all prints a summary line with counts, noise and cache saving', () => {
   const result = run(['all', freshDemoRepo(), '--command', 'node', '--flakes', demoRuns, '--', 'node', 'build.mjs']);
   assert.equal(result.status, 1);
-  assert.match(result.stdout, /Summary: 4 checks — 2 passed, 2 failed, 0 skipped; context noise 1\.68 MB; cache saved \d+%/);
+  const expectedSize = formatBytes(demoNoiseBytes);
+  assert.match(result.stdout, new RegExp(`Summary: 4 checks — 2 passed, 2 failed, 0 skipped; context noise ${expectedSize.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}; cache saved \\d+%`));
 });
 
 test('cli: all --json includes the summary object', () => {
