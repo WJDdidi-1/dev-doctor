@@ -38,6 +38,28 @@ test('cli: an unknown command is a usage error', () => {
   assert.match(result.stderr, /unknown command/);
 });
 
+test('cli: a bare path means all on that path', () => {
+  const result = run([demoRepo]);
+  assert.equal(result.status, 1);
+  assert.match(result.stdout, new RegExp(`dev-diagnosis — ${demoRepo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+  assert.match(result.stdout, /== context ==/);
+  assert.match(result.stdout, /== skipped ==/);
+  assert.match(result.stdout, /Overall: FAIL/);
+});
+
+test('cli: a bare path with options runs all with those options', () => {
+  const result = run([demoRepo, '--command', 'node']);
+  assert.equal(result.status, 1);
+  assert.match(result.stdout, /== path ==/);
+  assert.match(result.stdout, /node resolves to/);
+});
+
+test('cli: a bare path that is not a directory is still a usage error', () => {
+  const result = run(['./definitely-not-a-directory-xyz']);
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /unknown command/);
+});
+
 test('cli: context on the demo repo finds noise and exits 1', () => {
   const result = run(['context', demoRepo]);
   assert.equal(result.status, 1);
@@ -72,6 +94,44 @@ test('cli: flakes on the demo runs ranks the always-failing test first', () => {
   assert.match(result.stdout, /appliesCoupon/);
 });
 
+test('cli: flakes --json --top limits the tests array but not the totals', () => {
+  const result = run(['flakes', demoRuns, '--json', '--top', '1']);
+  assert.equal(result.status, 1);
+  const parsed = JSON.parse(result.stdout);
+  assert.equal(parsed.tests.length, 1);
+  assert.equal(parsed.totals.tests, 5);
+  assert.equal(parsed.tests[0].id, 'com.example.LoginTest::rejectsExpiredToken');
+});
+
+test('cli: all --json --top limits the embedded flakes tests', () => {
+  const result = run(['all', demoRepo, '--flakes', demoRuns, '--json', '--top', '1']);
+  assert.equal(result.status, 1);
+  const parsed = JSON.parse(result.stdout);
+  assert.equal(parsed.checks.flakes.tests.length, 1);
+  assert.equal(parsed.checks.flakes.totals.tests, 5);
+});
+
+test('cli: all --json keeps the reason when flakes cannot run', () => {
+  const missing = path.join(demoRepo, 'no-such-runs');
+  const result = run(['all', demoRepo, '--flakes', missing, '--json']);
+  assert.equal(result.status, 1);
+  const parsed = JSON.parse(result.stdout);
+  assert.equal(parsed.overall, 'FAIL');
+  assert.ok(parsed.checks.context, 'context still present');
+  assert.match(parsed.checks.flakes.error, /runs directory not found/);
+  assert.match(parsed.checks.flakes.error, /no-such-runs/);
+});
+
+test('cli: all --json keeps the reason when the cache build fails', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-diagnosis-all-cache-'));
+  fs.mkdirSync(path.join(dir, '.cache'), { recursive: true });
+  const result = run(['all', dir, '--json', '--', process.execPath, '-e', 'process.exit(3)']);
+  assert.equal(result.status, 1);
+  const parsed = JSON.parse(result.stdout);
+  assert.equal(parsed.overall, 'FAIL');
+  assert.match(parsed.checks.cache.error, /cold build failed \(exit 3\)/);
+});
+
 test('cli: flakes with only a broken XML file fails and names the file', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-diagnosis-flakes-broken-'));
   fs.mkdirSync(path.join(dir, 'run-01'), { recursive: true });
@@ -97,6 +157,33 @@ test('cli: flakes with only an empty XML file fails and names the file', () => {
   assert.match(result.stdout, /no root element/);
   assert.match(result.stdout, /FAIL/);
   assert.match(result.stdout, /1 file could not be parsed/);
+});
+
+test('cli: flakes with an empty run directory fails and names the run', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-diagnosis-flakes-empty-run-'));
+  fs.mkdirSync(path.join(dir, 'run-01'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'run-02-empty'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'run-01', 'results.xml'), `<?xml version="1.0"?><testsuites><testsuite><testcase classname="T" name="t"/></testsuite></testsuites>`);
+  const result = run(['flakes', dir]);
+  assert.equal(result.status, 1);
+  assert.match(result.stdout, /runs: 1/);
+  assert.match(result.stdout, /No flaky tests/);
+  assert.match(result.stdout, /run-02-empty/);
+  assert.match(result.stdout, /no JUnit XML files/);
+  assert.match(result.stdout, /FAIL/);
+  assert.match(result.stdout, /1 run directory had no JUnit XML files/);
+});
+
+test('cli: flakes --json reports the skipped run directory', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-diagnosis-flakes-empty-run-json-'));
+  fs.mkdirSync(path.join(dir, 'run-01'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'run-02-empty'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'run-01', 'results.xml'), `<?xml version="1.0"?><testsuites><testsuite><testcase classname="T" name="t"/></testsuite></testsuites>`);
+  const result = run(['flakes', dir, '--json']);
+  assert.equal(result.status, 1);
+  const parsed = JSON.parse(result.stdout);
+  assert.equal(parsed.totals.runs, 1);
+  assert.deepEqual(parsed.skippedRuns, [{ id: 'run-02-empty', reason: 'no JUnit XML files found' }]);
 });
 
 test('cli: flakes with a broken file next to a clean run still fails', () => {  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-diagnosis-flakes-mixed-'));

@@ -42,7 +42,8 @@ Usage:
 Commands:
   all       Run every check that has what it needs and print one unified
             report. context always runs on [path] (default: current
-            directory). path runs when --command is given, flakes when
+            directory). A bare path is the same as all <path>.
+            path runs when --command is given, flakes when
             --flakes is given, cache when a build command follows --.
             Checks without their input are listed as skipped, with the
             command that would run them.
@@ -238,7 +239,11 @@ function runPath(commandName) {
 
 function printFlakes(result, top, json) {
   if (json) {
-    console.log(JSON.stringify(result, null, 2));
+    // --top limits the listing, not the scan: the tests array holds only
+    // the N highest-ranked tests, while totals still describe the whole
+    // run set — the same split the text table already makes.
+    const out = top == null ? result : { ...result, tests: result.tests.slice(0, top) };
+    console.log(JSON.stringify(out, null, 2));
     return;
   }
   console.log(formatFlakesTable(result, top));
@@ -248,20 +253,23 @@ function runFlakes(dir) {
   if (!dir) throw new UsageError('flakes needs a runs directory, for example: dev-diagnosis flakes examples/runs');
   const result = scanRuns(dir);
   const unparsable = result.warnings.length;
-  // A file that could not be parsed means the verdict is based on
-  // incomplete data: "no flaky tests" on a half-read run set is not a
-  // pass, so the check fails and the verdict says how many files were
-  // unreadable. The warnings themselves are printed with the table.
-  const passed = result.totals.flaky === 0 && result.totals.alwaysFailing === 0 && unparsable === 0;
+  const skippedRuns = result.skippedRuns ? result.skippedRuns.length : 0;
+  // A file that could not be parsed, or a run directory that produced no
+  // reports, means the verdict is based on incomplete data: "no flaky
+  // tests" on a half-read run set is not a pass, so the check fails and
+  // the verdict says what was unreadable. The warnings themselves are
+  // printed with the table.
+  const passed = result.totals.flaky === 0 && result.totals.alwaysFailing === 0 && unparsable === 0 && skippedRuns === 0;
   const base = result.totals.flaky === 0 && result.totals.alwaysFailing === 0
     ? `no flaky tests across ${result.totals.runs} runs`
     : `${result.totals.flaky} flaky, ${result.totals.alwaysFailing} always-failing across ${result.totals.runs} runs`;
+  const problems = [];
+  if (unparsable > 0) problems.push(`${unparsable} file${unparsable === 1 ? '' : 's'} could not be parsed`);
+  if (skippedRuns > 0) problems.push(`${skippedRuns} run director${skippedRuns === 1 ? 'y' : 'ies'} had no JUnit XML files`);
   return {
     result,
     passed,
-    verdict: unparsable > 0
-      ? `${base}; ${unparsable} file${unparsable === 1 ? '' : 's'} could not be parsed`
-      : base,
+    verdict: problems.length > 0 ? `${base}; ${problems.join('; ')}` : base,
   };
 }
 
@@ -311,13 +319,26 @@ function main(argv) {
   }
 
   const command = args.command || 'all';
-  if (args.fix && command !== 'context' && command !== 'all') {
+  // `dev-diagnosis <path>` means `dev-diagnosis all <path>`: the usage line
+  // promises `[all] [path]`, so a bare positional that is an existing
+  // directory is a path, not an unknown command. Anything else that is not
+  // a known command still errors below, so a typo stays a typo.
+  let resolvedCommand = command;
+  if (!['all', 'context', 'path', 'cache', 'flakes'].includes(command)) {
+    let isDir = false;
+    try { isDir = fs.statSync(path.resolve(command)).isDirectory(); } catch { isDir = false; }
+    if (isDir) {
+      args.positional.unshift(command);
+      resolvedCommand = 'all';
+    }
+  }
+  if (args.fix && resolvedCommand !== 'context' && resolvedCommand !== 'all') {
     console.error('Error: --fix only applies to context (and all).');
     console.error('Run with --help to see the available options.');
     return 2;
   }
   try {
-    if (command === 'context') {
+    if (resolvedCommand === 'context') {
       const target = args.positional[0];
       const check = runContext(target);
       // In --json mode the fix must be part of the printed object, so it
@@ -331,27 +352,27 @@ function main(argv) {
       if (!args.json) console.log(verdictLine(check.passed, check.verdict));
       return check.passed ? 0 : 1;
     }
-    if (command === 'path') {
+    if (resolvedCommand === 'path') {
       const name = args.positional[0];
       const check = runPath(name);
       printPath(check.result, args.json);
       if (!args.json) console.log(verdictLine(check.passed, check.verdict));
       return check.passed ? 0 : 1;
     }
-    if (command === 'flakes') {
+    if (resolvedCommand === 'flakes') {
       const dir = args.positional[0];
       const check = runFlakes(dir);
       printFlakes(check.result, args.top, args.json);
       if (!args.json) console.log(verdictLine(check.passed, check.verdict));
       return check.passed ? 0 : 1;
     }
-    if (command === 'cache') {
+    if (resolvedCommand === 'cache') {
       const check = runCache({ buildCommand: args.buildCommand, cacheDir: args.cacheDir, cwd: args.cwd });
       printCache(check.result, args.json);
       if (!args.json) console.log(verdictLine(check.passed, check.verdict));
       return check.passed ? 0 : 1;
     }
-    if (command === 'all') {
+    if (resolvedCommand === 'all') {
       const target = args.positional[0];
       const root = target ? path.resolve(target) : process.cwd();
       const checks = {};
@@ -403,7 +424,19 @@ function main(argv) {
       if (args.json) {
         const out = {
           command: 'all', root,
-          checks: Object.fromEntries(Object.entries(checks).map(([key, check]) => [key, check.result])),
+          checks: Object.fromEntries(Object.entries(checks).map(([key, check]) => {
+            let result = check.result;
+            // Same --top split as the standalone flakes output: the
+            // embedded tests array is limited, totals stay whole-scan.
+            if (key === 'flakes' && result && args.top != null) {
+              result = { ...result, tests: result.tests.slice(0, args.top) };
+            }
+            // A check that could not run has no result: keep its reason
+            // in the JSON instead of emitting null, or a script consumer
+            // sees overall FAIL with no way to tell why.
+            if (result == null) result = { error: check.error || check.verdict };
+            return [key, result];
+          })),
           skipped, overall: overall ? 'PASS' : 'FAIL',
         };
         console.log(JSON.stringify(out, null, 2));

@@ -135,3 +135,13 @@ test('scanRuns: an empty XML file is a warning, not a silent skip', () => {
   assert.match(result.warnings[0], /empty\.xml/);
   assert.match(result.warnings[0], /no root element/);
 });
+
+test('scanRuns: a run directory with no XML files is skipped and reported, not silently dropped', () => {
+  const root = writeRuns({ 'run-01/results.xml': RUN_1 });
+  fs.mkdirSync(path.join(root, 'run-02-empty'), { recursive: true });
+  const result = scanRuns(root);
+  assert.equal(result.totals.runs, 1);
+  assert.equal(result.totals.tests, 3);
+  assert.equal(result.warnings.length, 0);
+  assert.deepEqual(result.skippedRuns, [{ id: 'run-02-empty', reason: 'no JUnit XML files found' }]);
+});

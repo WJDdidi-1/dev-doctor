@@ -1,6 +1,32 @@
 # Changelog
 
-## 0.1.6 — unreleased
+## 0.1.7 — unreleased
+
+- Fix: `dev-diagnosis <path>` no longer errors with "unknown command" —
+  the usage line promises `[all] [path]`, but a bare path was treated as a
+  command name. A bare positional that is an existing directory now means
+  `all` on that path (options like `--command` still apply); a word that
+  is neither a known command nor a directory is still a usage error, so a
+  typo stays a typo. The help text and README say so.
+- Fix: `--top N` was silently ignored in `--json` output — `flakes
+  <dir> --json --top 1` returned all five demo tests instead of one.
+  The JSON `tests` array is now limited to the N highest-ranked tests,
+  in standalone `flakes` and in `all --json` alike; `totals` still
+  describes the whole run set, the same split the text table makes.
+- Fix: `all --json` dropped the reason a check could not run — a missing
+  runs directory or a failing build came out as `"flakes": null` /
+  `"cache": null` next to `overall: FAIL`, with nothing saying why.
+  A check with no result now reports `{ "error": "<reason>" }` instead,
+  so a script consuming the JSON can tell which check failed and why.
+- Fix: a run directory with no JUnit XML files was silently dropped —
+  `flakes` on two run directories, one of them empty, reported
+  "runs: 1" with no mention of the second run. An empty run directory
+  is now named in the output (and in `--json` under `skippedRuns`) and
+  fails the check: a CI run that produced no reports is a broken upload,
+  not a run with zero tests.
+  (72 tests.)
+
+## 0.1.6 — 2026-11-12
 
 - Fix: an empty JUnit file (0 bytes, whitespace only, or a declaration/comment
   and nothing else) no longer parses as a clean run of zero tests — the XML
