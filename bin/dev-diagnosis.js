@@ -34,7 +34,7 @@ Usage:
   dev-diagnosis [all] [path] [--command <name>] [--flakes <dir>] [--fix] [-- <build-command...>]
   dev-diagnosis context [path] [--json] [--fix]
   dev-diagnosis path <command> [--json]
-  dev-diagnosis cache [--cache-dir <dir>] [--cwd <dir>] -- <build-command...>
+  dev-diagnosis cache [--json] [--cache-dir <dir>] [--cwd <dir>] -- <build-command...>
   dev-diagnosis flakes <runs-dir> [--json] [--top N]
   dev-diagnosis --help
   dev-diagnosis --version
@@ -61,7 +61,7 @@ Commands:
             each *.xml file directly under it is a run of its own.
 
 Options:
-  --json          machine-readable output (context, path, flakes, all)
+  --json          machine-readable output (context, path, cache, flakes, all)
   --fix           write the context check's .aiignore suggestions into
                   <path>/.aiignore (context and all only). Entries that
                   are already there are left alone; nothing else in the
@@ -292,14 +292,22 @@ function runCache(options) {
 
 function printCache(result, json) {
   if (json) {
-    const { coldStdout, warmStdout, ...rest } = result;
-    console.log(JSON.stringify(rest, null, 2));
+    console.log(JSON.stringify(stripCacheStdout(result), null, 2));
     return;
   }
   console.log(`Cache dir: ${result.cacheDir}`);
   console.log(`Command: ${result.command.join(' ')}`);
   console.log(`Cold: ${formatMs(result.coldMs)}  Warm: ${formatMs(result.warmMs)}  Saved: ${formatMs(Math.max(0, result.savedMs))} (${result.savedPct}%)`);
   console.log(`Verdict: ${result.verdict} — ${result.verdictDetail}`);
+}
+
+// The raw cache result carries the build's full stdout from both runs;
+// JSON output drops it, so a chatty build does not bloat the machine-
+// readable output. Used by printCache and by the `all --json` builder
+// below, so both shapes stay identical.
+function stripCacheStdout(result) {
+  const { coldStdout, warmStdout, ...rest } = result;
+  return rest;
 }
 
 function main(argv) {
@@ -431,6 +439,9 @@ function main(argv) {
             if (key === 'flakes' && result && args.top != null) {
               result = { ...result, tests: result.tests.slice(0, args.top) };
             }
+            // Same stdout strip as standalone `cache --json`: the raw
+            // result carries the build's full stdout from both runs.
+            if (key === 'cache' && result) result = stripCacheStdout(result);
             // A check that could not run has no result: keep its reason
             // in the JSON instead of emitting null, or a script consumer
             // sees overall FAIL with no way to tell why.

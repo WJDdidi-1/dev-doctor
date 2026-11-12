@@ -1,6 +1,29 @@
 # Changelog
 
-## 0.1.7 — unreleased
+## 0.1.8 — 2026-11-12
+
+- Fix: `all --json` embedded the build's full stdout (`coldStdout` /
+  `warmStdout`) in the cache check, while standalone `cache --json`
+  already left it out — a chatty build bloated the machine-readable
+  output. Both shapes are now the same: timings and verdict only. The
+  `--json` option also now documents `cache` (the usage line and help
+  text listed only `context`, `path`, `flakes` and `all`, although
+  standalone `cache --json` already worked).
+- New: `context` now also honours `.gitignore` — files and directories
+  it lists are excluded from the scan, at the repo root and in nested
+  `.gitignore` files alike, so a repo whose build output, logs or data
+  dumps are already git-ignored no longer gets flagged for them, and
+  `--fix` no longer duplicates those entries into `.aiignore`. The
+  common pattern forms work (`*`, `?`, `[...]`, `**`, `/`-anchored
+  paths, directory-only `dir/`, `!` negation with last-match-wins);
+  `.git/info/exclude` and the global gitignore are not read. (82 tests.)
+- Dogfood: the repo now ships a `.aiignore` excluding the demo fixture
+  (`examples/demo-repo/`), so `dev-diagnosis all` on a checkout passes
+  its own `context` check (was 77/100 FAIL, now 100/100 PASS). The
+  fixture is intentionally noisy test data and stays noisy when scanned
+  directly — `npm run example` output is unchanged.
+
+## 0.1.7 — 2026-11-12
 
 - Fix: `dev-diagnosis <path>` no longer errors with "unknown command" —
   the usage line promises `[all] [path]`, but a bare path was treated as a

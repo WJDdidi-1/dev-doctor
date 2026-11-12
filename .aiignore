@@ -1,0 +1,5 @@
+# The demo fixture is intentionally noisy test data for `npm run example`
+# (a build output, a log, a lockfile and a 1.7 MB data dump). It stays
+# noisy when scanned directly, but it is not source an AI agent should
+# read when scanning this repo itself, so repo-root scans skip it.
+examples/demo-repo/

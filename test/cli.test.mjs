@@ -204,6 +204,24 @@ test('cli: cache on the demo repo pays', () => {
   assert.match(result.stdout, /Verdict: cache pays/);
 });
 
+test('cli: cache --json leaves the build stdout out of the JSON', () => {
+  const result = run(['cache', '--cwd', demoRepo, '--json', '--', 'node', 'build.mjs']);
+  assert.equal(result.status, 0);
+  const parsed = JSON.parse(result.stdout);
+  assert.equal(parsed.verdict, 'cache pays');
+  assert.ok(Number.isFinite(parsed.coldMs) && Number.isFinite(parsed.warmMs));
+  assert.ok(!('coldStdout' in parsed) && !('warmStdout' in parsed));
+});
+
+test('cli: all --json leaves the build stdout out of the cache check', () => {
+  const result = run(['all', demoRepo, '--command', 'node', '--flakes', demoRuns, '--json', '--', 'node', 'build.mjs']);
+  assert.equal(result.status, 1);
+  const parsed = JSON.parse(result.stdout);
+  assert.equal(parsed.checks.cache.verdict, 'cache pays');
+  assert.ok(Number.isFinite(parsed.checks.cache.coldMs));
+  assert.ok(!('coldStdout' in parsed.checks.cache) && !('warmStdout' in parsed.checks.cache));
+});
+
 test('cli: all on the demo repo runs all four checks and reports the skips honestly', () => {
   const result = run(['all', demoRepo, '--command', 'node', '--flakes', demoRuns, '--', 'node', 'build.mjs']);
   assert.equal(result.status, 1);

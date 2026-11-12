@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { applyAiignore, classifyPath, matchesAiignore, scanDirectory } from '../lib/context.mjs';
+import { applyAiignore, classifyPath, isGitignored, matchesAiignore, parseGitignore, scanDirectory } from '../lib/context.mjs';
 
 function makeRepo(files) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-diagnosis-context-'));
@@ -209,4 +209,115 @@ test('scanDirectory: .git and node_modules are skipped', () => {
   const result = scanDirectory(root);
   assert.equal(result.score, 100);
   assert.equal(result.files, 1);
+});
+
+test('parseGitignore: comments, negation, directory-only and anchoring', () => {
+  const rules = parseGitignore('# comment\n\n*.log\n!keep.log\n' + 'dist/\n' + '/build\n' + 'a/b\n');
+  assert.equal(rules.length, 5);
+  assert.equal(rules[0].negate, false);
+  assert.equal(rules[0].anchored, false); // *.log matches a basename anywhere
+  assert.equal(rules[1].negate, true); // !keep.log re-includes
+  assert.equal(rules[2].dirOnly, true); // dist/ is directories only
+  assert.equal(rules[3].anchored, true); // /build is root-only
+  assert.equal(rules[4].anchored, true); // a/b has a slash, so it is anchored
+});
+
+test('isGitignored: last matching pattern wins, including negation', () => {
+  const stack = [{ base: '', rules: parseGitignore('*.log\n!keep.log\n') }];
+  assert.equal(isGitignored('logs/dev.log', false, stack), true);
+  assert.equal(isGitignored('logs/keep.log', false, stack), false);
+  assert.equal(isGitignored('src/index.js', false, stack), false);
+});
+
+test('scanDirectory: files listed in .gitignore are excluded from the scan', () => {
+  // A repo whose build output, logs and data dumps are already
+  // git-ignored is not noisy for an agent: most agents never see those
+  // files, so flagging them would be noise about noise — and --fix
+  // would duplicate the entries into .aiignore.
+  const root = makeRepo({
+    'src/index.js': 'x\n',
+    'dist/app.bundle.js': 'bundled\n'.repeat(500),
+    'logs/dev.log': 'log\n',
+    'data/export.json': 'x'.repeat(2 * 1024 * 1024),
+    '.gitignore': 'dist/\n*.log\ndata/export.json\n',
+  });
+  const result = scanDirectory(root);
+  assert.equal(result.score, 100);
+  assert.equal(result.noise.length, 0);
+  assert.deepEqual(result.suggestions, []);
+  assert.equal(result.files, 2); // src/index.js and .gitignore itself
+});
+
+test('scanDirectory: .gitignore negation re-includes a file', () => {
+  const root = makeRepo({
+    'src/index.js': 'x\n',
+    'logs/dev.log': 'log\n',
+    'logs/keep.log': 'log\n',
+    '.gitignore': '*.log\n!keep.log\n',
+  });
+  const result = scanDirectory(root);
+  assert.equal(result.noise.length, 1);
+  assert.equal(result.noise[0].label, 'logs/keep.log');
+  assert.ok(result.suggestions.includes('*.log'));
+});
+
+test('scanDirectory: anchored .gitignore patterns match only at the root', () => {
+  const root = makeRepo({
+    'src/index.js': 'x\n',
+    'build/out.js': 'bundled\n',
+    'packages/foo/build/out.js': 'bundled\n',
+    '.gitignore': '/build\n',
+  });
+  const result = scanDirectory(root);
+  assert.equal(result.noise.length, 1);
+  assert.equal(result.noise[0].label, 'packages/foo/build/');
+
+  // The same pattern without the leading slash matches at any depth.
+  const unanchored = makeRepo({
+    'src/index.js': 'x\n',
+    'build/out.js': 'bundled\n',
+    'packages/foo/build/out.js': 'bundled\n',
+    '.gitignore': 'build\n',
+  });
+  assert.equal(scanDirectory(unanchored).noise.length, 0);
+});
+
+test('scanDirectory: a nested .gitignore applies to its own subtree', () => {
+  const root = makeRepo({
+    'src/index.js': 'x\n',
+    'data/export.json': 'x'.repeat(2 * 1024 * 1024),
+    'sub/data/export.json': 'x'.repeat(2 * 1024 * 1024),
+    'sub/.gitignore': 'data/\n',
+  });
+  const result = scanDirectory(root);
+  assert.equal(result.noise.length, 1);
+  assert.equal(result.noise[0].label, 'data/export.json');
+});
+
+test('scanDirectory: .gitignore ** patterns match at any depth', () => {
+  const root = makeRepo({
+    'src/index.js': 'x\n',
+    'a/generated/out.js': 'bundled\n',
+    'a/b/generated/out.js': 'bundled\n',
+    '.gitignore': '**/generated\n',
+  });
+  assert.equal(scanDirectory(root).noise.length, 0);
+});
+
+test('scanDirectory: a directory-only .gitignore pattern does not match a file', () => {
+  // `cache/` ignores a directory called cache, not a file of the same
+  // name — the file is still scanned (and counted).
+  const ignored = makeRepo({
+    'cache': 'x\n',
+    'other.js': 'x\n',
+    '.gitignore': 'cache/\n',
+  });
+  assert.equal(scanDirectory(ignored).files, 3);
+
+  const plain = makeRepo({
+    'cache': 'x\n',
+    'other.js': 'x\n',
+    '.gitignore': 'cache\n',
+  });
+  assert.equal(scanDirectory(plain).files, 2);
 });
