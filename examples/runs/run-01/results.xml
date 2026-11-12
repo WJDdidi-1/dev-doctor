@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+  <testsuite name="com.example.CheckoutTest" timestamp="2026-01-05T10:00:00">
+    <testcase classname="com.example.CheckoutTest" name="appliesCoupon">
+      <flakyFailure message="expected 10% discount, got 0">
+        <stackTrace>org.opentest4j.AssertionFailedError: expected 10% discount, got 0
+  at CheckoutTest.appliesCoupon(CheckoutTest.java:42)</stackTrace>
+      </flakyFailure>
+    </testcase>
+  </testsuite>
+  <testsuite name="com.example.LoginTest" timestamp="2026-01-05T10:00:00">
+    <testcase classname="com.example.LoginTest" name="rejectsExpiredToken">
+      <failure message="expected 401, got 200">
+        <stackTrace>org.opentest4j.AssertionFailedError: expected 401, got 200</stackTrace>
+      </failure>
+    </testcase>
+  </testsuite>
+  <testsuite name="com.example.SearchTest" timestamp="2026-01-05T10:00:00">
+    <testcase classname="com.example.SearchTest" name="filtersByPrice"/>
+  </testsuite>
+  <testsuite name="com.example.CartTest" timestamp="2026-01-05T10:00:00">
+    <testcase classname="com.example.CartTest" name="addsItem"/>
+  </testsuite>
+  <testsuite name="com.example.ReportTest" timestamp="2026-01-05T10:00:00">
+    <testcase classname="com.example.ReportTest" name="exportsCsv">
+      <skipped message="CSV export not configured"/>
+    </testcase>
+  </testsuite>
+</testsuites>

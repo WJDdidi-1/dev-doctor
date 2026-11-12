@@ -1,0 +1,51 @@
+# dev-diagnosis as a GitHub Action.
+#
+# Runs `dev-diagnosis all` on the checked-out repo and fails the job
+# when a check fails, so a noisy repo, a flaky test or a cache that
+# costs more than it saves blocks the merge instead of silently
+# piling up. It runs the published npm package (@latest, so a repo
+# using this action always gets the newest checks), not the checkout:
+# nothing in the action needs the repo's own code.
+#
+# This file lives at the repo root on purpose: the GitHub App used to
+# push to this repo cannot write .github/workflows/*, but it can push
+# a repo-root action.yml, so the action stays publishable through the
+# same API push the rest of the repo uses.
+#
+# Usage (copy-paste into a workflow):
+#
+#   jobs:
+#     diagnose:
+#       runs-on: ubuntu-latest
+#       steps:
+#         - uses: actions/checkout@v4
+#         - uses: actions/setup-node@v4
+#           with:
+#             node-version: 20
+#         - uses: WJDdidi-1/dev-doctor@main
+#           with:
+#             path: .
+#             args: --command node
+#
+# `args` is passed straight to `dev-diagnosis all`, so --command,
+# --flakes, --fix and a build command after -- all work the same way
+# they do on the command line.
+name: dev-diagnosis
+description: Diagnose your repo — context noise for AI agents, missing commands, build-cache value, flaky tests.
+inputs:
+  path:
+    description: Repo (or subdirectory) to diagnose
+    required: false
+    default: .
+  args:
+    description: Extra arguments passed to `dev-diagnosis all`
+    required: false
+    default: ''
+runs:
+  using: composite
+  steps:
+    - run: npx -y dev-diagnosis-cli@latest all "${{ inputs.path }}" ${{ inputs.args }}
+      shell: bash
+branding:
+  icon: search
+  color: blue

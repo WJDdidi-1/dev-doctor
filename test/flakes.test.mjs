@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { tempDir } from '../scripts/support.mjs';
 import { parseJunitText, scanRuns, wilsonLowerBound } from '../lib/flakes.mjs';
 
 const RUN_1 = `<?xml version="1.0" encoding="UTF-8"?>
@@ -30,7 +31,7 @@ const RUN_2 = `<?xml version="1.0" encoding="UTF-8"?>
 </testsuites>`;
 
 function writeRuns(files) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-diagnosis-runs-'));
+  const root = tempDir('dev-diagnosis-runs-');
   for (const [relative, content] of Object.entries(files)) {
     const full = path.join(root, relative);
     fs.mkdirSync(path.dirname(full), { recursive: true });
@@ -95,7 +96,7 @@ test('scanRuns: ranks always-failing above passed-on-retry, and classifies both'
 });
 
 test('scanRuns: a directory with no XML is an error', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-diagnosis-runs-'));
+  const root = tempDir('dev-diagnosis-runs-');
   assert.throws(() => scanRuns(root), /no JUnit XML files found/);
 });
 

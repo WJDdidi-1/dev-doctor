@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { tempDir } from '../scripts/support.mjs';
 import {
   buildContexts, commandNames, findCommandCopies, lookupCommand,
 } from '../lib/pathcheck.mjs';
@@ -31,7 +32,7 @@ function assertSamePath(actual, expected) {
 }
 
 test('lookupCommand: finds an executable on PATH', () => {
-  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-diagnosis-bin-'));
+  const bin = tempDir('dev-diagnosis-bin-');
   const target = makeBin(bin, 'mytool');
   const result = lookupCommand('mytool', bin);
   assert.equal(result.resolved, true);
@@ -45,7 +46,7 @@ test('lookupCommand: a missing command says so', () => {
 });
 
 test('lookupCommand: a non-executable file is reported, not resolved', () => {
-  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-diagnosis-bin-'));
+  const bin = tempDir('dev-diagnosis-bin-');
   const full = path.join(bin, 'mytool');
   fs.writeFileSync(full, 'not executable\n');
   fs.chmodSync(full, 0o644);
@@ -55,7 +56,7 @@ test('lookupCommand: a non-executable file is reported, not resolved', () => {
 });
 
 test('lookupCommand: a broken symlink is reported as broken', () => {
-  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-diagnosis-bin-'));
+  const bin = tempDir('dev-diagnosis-bin-');
   fs.symlinkSync(path.join(bin, 'missing-target'), path.join(bin, 'mytool'));
   const result = lookupCommand('mytool', bin);
   assert.equal(result.resolved, false);
@@ -63,8 +64,8 @@ test('lookupCommand: a broken symlink is reported as broken', () => {
 });
 
 test('findCommandCopies: the first copy wins, later copies are shadowed', () => {
-  const first = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-diagnosis-bin1-'));
-  const second = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-diagnosis-bin2-'));
+  const first = tempDir('dev-diagnosis-bin1-');
+  const second = tempDir('dev-diagnosis-bin2-');
   const firstTool = makeBin(first, 'mytool');
   const secondTool = makeBin(second, 'mytool');
   const delimiter = process.platform === 'win32' ? ';' : ':';
@@ -76,7 +77,7 @@ test('findCommandCopies: the first copy wins, later copies are shadowed', () => 
 });
 
 test('findCommandCopies: two PATH entries pointing at the same file count once', () => {
-  const real = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-diagnosis-bin-'));
+  const real = tempDir('dev-diagnosis-bin-');
   makeBin(real, 'mytool');
   const linkDir = path.join(os.tmpdir(), `dev-diagnosis-link-${process.pid}`);
   try { fs.symlinkSync(real, linkDir, 'dir'); } catch { /* Windows without privilege: skip */ return; }

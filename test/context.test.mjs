@@ -3,10 +3,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { tempDir } from '../scripts/support.mjs';
 import { applyAiignore, classifyPath, isGitignored, matchesAiignore, parseGitignore, scanDirectory } from '../lib/context.mjs';
 
 function makeRepo(files) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-diagnosis-context-'));
+  const root = tempDir('dev-diagnosis-context-');
   for (const [relative, content] of Object.entries(files)) {
     const full = path.join(root, relative);
     fs.mkdirSync(path.dirname(full), { recursive: true });
@@ -116,18 +117,63 @@ test('scanDirectory: a noisy repo scores below clean and suggests fixes', () => 
     'src/index.js': 'x\n',
     'dist/app.bundle.js': 'bundled\n'.repeat(500),
     'package-lock.json': '{}\n',
-    'logs/dev.log': 'log\n',
+    'logs/dev.log': 'log line\n'.repeat(2000),
     'data/export.json': 'x'.repeat(2 * 1024 * 1024),
   });
   const result = scanDirectory(root);
   // The large file alone costs its full 25 points, so the score is at most
   // 75; the other noise categories push it lower.
   assert.ok(result.score < 85, `expected a noisy score, got ${result.score}`);
-  assert.ok(result.noise.length >= 4);
+  assert.ok(result.noise.length >= 3);
   assert.ok(result.suggestions.includes('dist/'));
-  assert.ok(result.suggestions.includes('package-lock.json'));
   assert.ok(result.suggestions.includes('*.log'));
   assert.ok(result.suggestions.includes('data/export.json'));
+  // The 3 B lockfile is 0% of a 2 MB repo and loses 0 points, so it is
+  // not listed as noise and not suggested: suggesting a fix that changes
+  // nothing about the score would contradict the verdict.
+  assert.ok(!result.noise.some((item) => item.reason === 'lockfile'));
+  assert.ok(!result.suggestions.includes('package-lock.json'));
+});
+
+test('scanDirectory: noise that costs no points is not listed', () => {
+  // A 95 B lockfile in a ~2 MB repo is 0% of the total and loses 0 of
+  // its 20 points — the scan is 100/100, so there is nothing to fix and
+  // the lockfile must not appear as noise or as a suggestion. (This is
+  // the repo's own state: package-lock.json is 351 B of 164 KB.)
+  const files = { 'package-lock.json': '{}\n' };
+  for (let i = 0; i < 100; i += 1) files[`src/file${i}.js`] = 'x\n'.repeat(2000);
+  const root = makeRepo(files);
+  const result = scanDirectory(root);
+  assert.equal(result.score, 100);
+  assert.equal(result.noise.length, 0);
+  assert.deepEqual(result.suggestions, []);
+});
+
+test('scanDirectory: review suggestions are advisory, never --fix suggestions', () => {
+  // A secret-like file costs no score points, so its suggestion must
+  // not be a --fix suggestion: writing `secret.js` by basename would
+  // hide every same-named file in the repo — including the harmless
+  // test fixture — while fixing nothing about the score.
+  const root = makeRepo({
+    'secret.js': 'const s = "AKIAIOSFODNN7EXAMPLE";\n',
+    'test/fixtures/lib/secret.js': 'module.exports = {};\n',
+    '.env': 'KEY=value\n',
+    'dist/app.js': 'bundled\n'.repeat(100),
+    'src/index.js': 'x\n',
+  });
+  const first = scanDirectory(root);
+  assert.deepEqual(first.suggestions, ['dist/']);
+  assert.deepEqual(first.reviewSuggestions, ['.env*', 'secret.js']);
+  assert.equal(first.review.length, 3);
+  // --fix writes only the score-costing suggestion, so the review items
+  // stay visible on the next scan instead of being silently hidden.
+  const fix = applyAiignore(root, first.suggestions);
+  assert.deepEqual(fix.added, ['dist/']);
+  const second = scanDirectory(root);
+  assert.equal(second.score, 100);
+  assert.deepEqual(second.suggestions, []);
+  assert.deepEqual(second.reviewSuggestions, ['.env*', 'secret.js']);
+  assert.equal(second.review.length, 3);
 });
 
 test('scanDirectory: a repo that is entirely build output scores 60, the floor', () => {
@@ -320,4 +366,36 @@ test('scanDirectory: a directory-only .gitignore pattern does not match a file',
     '.gitignore': 'cache\n',
   });
   assert.equal(scanDirectory(plain).files, 2);
+});
+
+test('scanDirectory: estimatedTokens is the listed noise at ~4 bytes per token', () => {
+  // 2 MB of large-file noise: the estimate is bytes / 4, and the score
+  // itself is unchanged by adding the field.
+  const root = makeRepo({
+    'src/index.js': 'x\n',
+    'data/big.bin': 'x'.repeat(2 * 1024 * 1024),
+  });
+  const result = scanDirectory(root);
+  assert.equal(result.estimatedTokens, Math.round(2 * 1024 * 1024 / 4));
+  assert.equal(result.score, 75);
+});
+
+test('scanDirectory: estimatedTokens is null when there is no listed noise', () => {
+  const root = makeRepo({ 'src/index.js': 'x\n' });
+  const result = scanDirectory(root);
+  assert.equal(result.estimatedTokens, null);
+  assert.equal(result.score, 100);
+});
+
+test('scanDirectory: estimatedTokens counts only noise that lost points', () => {
+  // A 95 B lockfile in a 1.7 MB repo loses 0 points and is not listed
+  // as noise, so it costs no tokens either — the estimate follows the
+  // listed noise, not every noise byte the scan saw.
+  const root = makeRepo({
+    'data/big.bin': 'x'.repeat(1700000),
+    'package-lock.json': 'x'.repeat(95),
+  });
+  const result = scanDirectory(root);
+  assert.equal(result.noise.length, 1);
+  assert.equal(result.estimatedTokens, Math.round(1700000 / 4));
 });

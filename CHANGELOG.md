@@ -1,5 +1,94 @@
 # Changelog
 
+## 0.2.0 — 2026-11-12
+
+- New: `dev-diagnosis --mcp` serves the four checks as an MCP server
+  on stdio (pure Node.js standard library, no new dependencies): five
+  tools (`diagnose_context`, `diagnose_path`, `diagnose_cache`,
+  `diagnose_flakes`, `diagnose_all`), each returning the same JSON the
+  CLI's `--json` produces. `initialize` (protocol 2024-11-05),
+  `tools/list`, `tools/call` and `ping` are supported. `--sandbox
+  <dir>` (alias `--root`) restricts every path the tools touch to that
+  directory and rejects anything outside it with a plain error.
+- New: `dev-diagnosis --skill-generate` writes a Claude Agent Skills
+  SKILL.md (`.claude/skills/dev-diagnosis/SKILL.md`, or
+  `~/.claude/skills/dev-diagnosis/SKILL.md` with `--global`) telling an
+  agent to run `dev-diagnosis all` when it starts work in a repo, fix
+  what FAILs, and re-run to confirm. It refuses to overwrite an
+  existing SKILL.md.
+- New: `context` reports what the listed noise costs in tokens —
+  `≈ 439k tokens (estimate, ~4 bytes per token)` next to the noise
+  list, and `estimatedTokens` (number, or null when there is no noise)
+  in the JSON output. The score is unchanged.
+- New: `all` ends with a one-line summary — passed/failed/skipped
+  counts, context noise bytes, and the cache saving when the cache
+  check ran — in text output and as a `summary` object in `--json`.
+- New: `dev-diagnosis setup` wires the MCP server into the agents on
+  your machine (Claude Code, Codex CLI, Cursor, VS Code) in one
+  command. It prints a preview of exactly what will be written before
+  writing anything: a config that already mentions dev-diagnosis is
+  left alone, one that exists without it is merged (other entries
+  kept), a missing one is created, and a config it cannot parse is
+  left alone and reported. `--dry-run` previews without writing;
+  `--check` reports which agents are wired (exit 0 when all are).
+- New: a GitHub Action (`action.yml` at the repo root) runs
+  `dev-diagnosis all` in one CI step and fails the job when a check
+  fails. It runs the published package, so it stays current. It lives
+  at the repo root because the GitHub App cannot push
+  `.github/workflows/*`.
+- Fix: `context --fix` (and `all --fix`, and the MCP tools with
+  `fix: true`) used to report the pre-fix verdict — exit 1 and FAIL —
+  even though the fix had landed and a re-run scores clean. A fix
+  command now re-scans after writing `.aiignore` and reports the repo
+  as it stands after the fix: the new score, the verdict and the exit
+  code all follow the post-fix scan, and `--json` carries the fix
+  outcome on the post-fix result. The fix still does not mask other
+  failures: `all --fix` exits 1 when flakes, path or cache still fail.
+  (Tests 124.)
+- Fix: the test suite now runs serially (`node --test
+  --test-concurrency=1`): the cache check times real builds, so test
+  files running in parallel skewed its cold-vs-warm timings and
+  flipped the verdict on a loaded machine. (122 tests.)
+- Fix: `context --fix` also wrote review suggestions into `.aiignore`
+  — a secret-like file costs no score points, so the entry fixed
+  nothing, and a basename pattern like `secret.js` hid every
+  same-named file in the repo, including harmless test fixtures.
+  Review suggestions are now advisory only (`reviewSuggestions` in
+  `--json`, printed as such) and `--fix` writes only the entries that
+  improve the score; a re-scan after `--fix` still lists the review
+  items instead of silently hiding them.
+- Docs: the README now opens with a 22 s terminal screencast
+  (`docs/demo.gif`, 92 KB): `all` on the demo repo finds ≈439k tokens
+  of noise, `--fix` writes one `.aiignore` entry, a re-run comes back
+  94/100 PASS. Every line is verbatim CLI output captured 2026-11-12;
+  the render script is not in the repo (it lives with the run logs).
+- Fix: the suite leaked every temp dir it created (~100 MB per run) —
+  after a few runs /tmp filled up and unrelated tests started failing
+  on file creation. Temp dirs are now removed after the test that
+  created them (`scripts/support.mjs`); the suite passes repeatedly
+  with /tmp staying clean.
+- Fix: `context` listed noise that cost no points and told the user to
+  fix it — on a 100/100 repo it still printed "Noise to keep away"
+  and a `.aiignore` fix for the lockfile, contradicting its own PASS
+  verdict. Only noise in a category that actually lost points is now
+  listed or suggested (a 95 B lockfile in a 1.7 MB repo loses 0
+  points, so it is not something to fix); the score itself is
+  unchanged, and the README example now shows the shorter noise list.
+- Fix: the `path` verdict said "missing in the current shell" even
+  when the command missed in all four shell contexts — which sounded
+  like it might exist somewhere else — and never said where it did
+  resolve when another context had it. It now says "not found in any
+  shell context" when nothing has it, and "missing in the current
+  shell, but resolves in login" (naming the contexts) when another one
+  does.
+- Internals: the four checks moved into `lib/checks.mjs`, the one
+  place their logic lives — the CLI renders it, the MCP server serves
+  it, neither re-implements a verdict. (120 tests.)
+- Docs: the README top is rewritten from the user's side — what the
+  noise costs in tokens, the three-step fix, one line per scenario, a
+  capability matrix that says what each check cannot find, and
+  copy-paste MCP configs for Claude Code and Codex.
+
 ## 0.1.8 — 2026-11-12
 
 - Fix: `all --json` embedded the build's full stdout (`coldStdout` /

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { tempDir } from '../scripts/support.mjs';
 import { detectCacheDir, runCacheCheck } from '../lib/cache.mjs';
 
 const BUILD_SCRIPT = `
@@ -25,7 +26,7 @@ if (fs.existsSync(out)) {
 `;
 
 function makeProject() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-diagnosis-cache-'));
+  const root = tempDir('dev-diagnosis-cache-');
   fs.mkdirSync(path.join(root, '.cache'), { recursive: true });
   fs.writeFileSync(path.join(root, '.cache', 'out.txt'), 'built\n');
   fs.writeFileSync(path.join(root, 'build.mjs'), BUILD_SCRIPT);
@@ -79,6 +80,6 @@ test('runCacheCheck: needs a build command', () => {
 test('detectCacheDir: finds .cache, and returns null when there is none', () => {
   const root = makeProject();
   assert.equal(detectCacheDir(root), path.join(root, '.cache'));
-  const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-diagnosis-cache-'));
+  const empty = tempDir('dev-diagnosis-cache-');
   assert.equal(detectCacheDir(empty), null);
 });

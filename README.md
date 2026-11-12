@@ -5,7 +5,47 @@
 [![license](https://img.shields.io/github/license/WJDdidi-1/dev-doctor.svg)](https://github.com/WJDdidi-1/dev-doctor/blob/main/LICENSE)
 [![node](https://img.shields.io/node/v/dev-diagnosis-cli.svg)](https://www.npmjs.com/package/dev-diagnosis-cli)
 
-One command that diagnoses your repo, your commands, your cache and your tests. It runs four checks that used to be four separate tools — whether an AI coding agent would read files it should not (`context`), why a CLI command is missing (`path`), whether a build cache actually pays (`cache`), and which tests are flaky (`flakes`) — and prints one report with a verdict per check. It is offline, has no runtime dependencies (Node.js standard library only), and works on Linux, macOS and Windows.
+Every token your agent spends reading a 1.7 MB data dump is money out of your pocket. Every flaky test is CI time your agent sits waiting. Every missing command is a turn your agent burns for nothing. dev-diagnosis finds all three — plus whether your build cache actually saves anything — in one command, offline, with no dependencies.
+
+![Terminal demo: one command finds ≈439k tokens of noise, one fix clears it](docs/demo.gif)
+
+## Try it: three steps, one fix
+
+```sh
+$ dev-diagnosis all
+Files: 9  Size: 1.68 MB  Score: 75/100 — Some context noise found
+Noise to keep away from an AI agent:
+  data/export.json — large file (1.68 MB)
+Estimated tokens wasted on this noise: ≈ 439k tokens (estimate, ~4 bytes per token)
+FAIL  some context noise found (score 75/100)
+
+$ dev-diagnosis context --fix
+Created .aiignore with 1 entry: data/export.json
+Re-scanned after fix: Score: 94/100 — Looks clean for an AI coding agent
+PASS  context is clean
+
+$ dev-diagnosis all
+Files: 9  Size: 1.16 KB  Score: 94/100 — Looks clean for an AI coding agent
+PASS  context is clean
+```
+
+The noise cost 439k tokens a turn; the fix is one entry in `.aiignore`.
+
+## When you reach for it
+
+- Just took over a repo: `dev-diagnosis all`
+- CI goes red, then green on retry, then red again: `dev-diagnosis flakes ci-runs/`
+- Builds feel slow even with a cache: `dev-diagnosis cache -- npm run build`
+- `command not found` in the IDE but works in the terminal: `dev-diagnosis path <name>`
+
+## What each check does — and does not do
+
+| Check | Needs | Finds | Cannot find |
+|---|---|---|---|
+| `context` | a directory | files your agent should not read, and what they cost in tokens | whether a large file is actually needed — it flags by size, you decide |
+| `path` | a command name | which shell contexts resolve it, shadowed copies, toolchain installs | why a command that resolves still crashes when it runs |
+| `cache` | a build command and a cache directory | whether the cache pays, cold vs warm | whether a different cache setup would be faster |
+| `flakes` | JUnit XML from two or more runs | flaky, always-failing and passed-on-retry tests, ranked | why a test is flaky — only that it is |
 
 ## Install and run
 
@@ -32,7 +72,75 @@ dev-diagnosis all [path] --command <name> --flakes <dir> -- <build-command...>
 
 `all` always runs `context` on `[path]` (default: the current directory) and runs `path`, `flakes` and `cache` when their input is given. Checks without their input are listed as skipped, with the command that would run them, instead of silently pretending they ran. A build command on a repo with no cache directory to measure is also listed as skipped rather than failing: nothing to measure is not a problem. `--json` gives machine-readable output for `context`, `path`, `cache`, `flakes` and `all`. In `all --json`, a check that could not run (a missing runs directory, a failing build) reports `{ "error": "<reason>" }` instead of `null`, so a script can tell why the overall result failed. Add `--fix` to `context` (or `all`) to write the suggestions into `<path>/.aiignore` instead of only printing them: entries already there are left alone, nothing else in the file is touched, and a later scan skips everything `.aiignore` lists — so `context --fix` followed by `context` comes back clean.
 
-Exit codes: `0` every check that ran passed; `1` a check found something to fix or could not run; `2` usage error.
+`all` ends with a one-line summary: how many checks passed, failed or were skipped, how much context noise was found, and what the cache saved when it ran. In `--json` output the same fields are in the `summary` object.
+
+Exit codes: `0` every check that ran passed; `1` a check found something to fix or could not run; `2` usage error. With `--fix`, the exit code follows a re-scan after the fix, so a fix that leaves the repo clean exits `0` — the command reports the repo as it stands after the fix, not as it was before.
+
+## Let your agent run it
+
+### One-command install
+
+`dev-diagnosis setup` detects the agents on your machine (Claude Code, Codex CLI, Cursor, VS Code) and writes the MCP config that wires dev-diagnosis into each of them. It prints a preview of exactly what will be written before writing anything: a config that already mentions dev-diagnosis is left alone, a config that exists without it is merged (other entries kept), a missing config is created. A config it cannot parse is left alone and reported.
+
+```sh
+dev-diagnosis setup            # preview, then write
+dev-diagnosis setup --dry-run  # preview only, write nothing
+dev-diagnosis setup --check    # report which agents are wired (exit 0 when all are)
+```
+
+If `dev-diagnosis` itself is not on PATH, setup says so — install it globally (`npm install -g dev-diagnosis-cli`) or the agents will not be able to run it.
+
+### MCP server
+
+`dev-diagnosis --mcp` serves the same four checks as MCP tools over stdio — no extra install, no network, the same code the CLI runs. Add it to your agent once:
+
+Claude Code (`.mcp.json` in the repo, or `claude mcp add dev-diagnosis -- dev-diagnosis --mcp`):
+
+```json
+{
+  "mcpServers": {
+    "dev-diagnosis": {
+      "command": "dev-diagnosis",
+      "args": ["--mcp"]
+    }
+  }
+}
+```
+
+Codex (`codex mcp add dev-diagnosis -- dev-diagnosis --mcp`, or in `~/.codex/config.toml`):
+
+```toml
+[mcp_servers.dev-diagnosis]
+command = "dev-diagnosis"
+args = ["--mcp"]
+```
+
+To keep the agent inside one repo, add `--sandbox <dir>` (alias `--root`): paths outside it are rejected with a plain error. Five tools: `diagnose_context`, `diagnose_path`, `diagnose_cache`, `diagnose_flakes`, `diagnose_all` — each returns the same JSON the CLI's `--json` produces.
+
+### Agent Skills
+
+`dev-diagnosis --skill-generate` writes `.claude/skills/dev-diagnosis/SKILL.md` in the current repo (or `~/.claude/skills/dev-diagnosis/SKILL.md` with `--global`). The skill tells an agent to run `dev-diagnosis all` when it starts work in a repo, fix what FAILs, and re-run to confirm. It refuses to overwrite an existing SKILL.md, so your own edits are safe.
+
+## In CI
+
+One step runs the diagnosis and fails the job when a check fails:
+
+```yaml
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: WJDdidi-1/dev-doctor@main
+        with:
+          path: .
+          args: --command node
+```
+
+`args` is passed straight to `dev-diagnosis all`, so `--command`, `--flakes`, `--fix` and a build command after `--` all work the same way they do on the command line. The action runs the published npm package (`@latest`), so a repo using it always gets the newest checks.
 
 ## Example
 
@@ -51,16 +159,11 @@ Files: 9  Size: 1.68 MB  Score: 75/100 — Some context noise found
   logs: 79 B (0%) — lost 0 of 15
 Noise to keep away from an AI agent:
   data/export.json — large file (1.68 MB)
-  dist/ — generated build output (98 B)
-  logs/dev.log — local log file (79 B)
-  package-lock.json — lockfile (95 B)
+Estimated tokens wasted on this noise: ≈ 439k tokens (estimate, ~4 bytes per token)
 Worth a look before sharing:
   .env.example — environment template (usually safe to share)
 Fix: add these to .aiignore (or the agent's ignore list):
-  *.log
   data/export.json
-  dist/
-  package-lock.json
 FAIL  some context noise found (score 75/100)
 
 == path ==
@@ -80,11 +183,12 @@ FAIL  1 flaky, 1 always-failing across 2 runs
 == cache ==
 Cache dir: /home/hatch/workspace/dev-doctor-build/dev-doctor/examples/demo-repo/.cache
 Command: node build.mjs
-Cold: 491 ms  Warm: 90 ms  Saved: 401 ms (82%)
-Verdict: cache pays — warm run is 401 ms (82%) faster than cold
-PASS  cache pays: cold 491 ms, warm 90 ms (warm run is 401 ms (82%) faster than cold)
+Cold: 484 ms  Warm: 82 ms  Saved: 402 ms (83%)
+Verdict: cache pays — warm run is 402 ms (83%) faster than cold
+PASS  cache pays: cold 484 ms, warm 82 ms (warm run is 402 ms (83%) faster than cold)
 
 Overall: FAIL — see the checks above
+Summary: 4 checks — 2 passed, 2 failed, 0 skipped; context noise 1.68 MB; cache saved 83%
 ```
 
 The demo repo is intentionally noisy, so `all` exits 1: the context and flakes checks fail while path and cache pass. That is the point of the fixture.
@@ -93,9 +197,9 @@ The demo repo is intentionally noisy, so `all` exits 1: the context and flakes c
 
 ### `context` — what an AI agent should not read
 
-Walks the repo (skipping `.git`, `node_modules` and other hidden directories) and classifies every file: build output, large files over 1 MB, lockfiles, logs, binary payloads, secret-like files and environment templates. It prints a 0–100 score, the bytes lost per category, the noisy files, the files worth a look before sharing, and the `.aiignore` entries that would fix it. Build-output directories are reported by their full path from the repo root (`packages/foo/dist/`, not a bare `dist/`) and rolled up into one row per directory, so the entry `--fix` writes matches nested build output too. A large file is fixed by its exact path from the repo root — no glob can single one file out — so `--fix` followed by a re-scan comes back clean even when the noise is a single oversized file. Files the repo's `.aiignore` already lists are excluded from the scan entirely — they are what the agent will not be handed, so they are not noise any more. Files and directories listed in `.gitignore` — at the repo root or in a subdirectory — are excluded the same way: they are already invisible to most agents, so flagging them would be noise about noise, and `--fix` will not duplicate them into `.aiignore`. The common pattern forms work (`*`, `?`, `[...]`, `**`, `/`-anchored paths, directory-only `dir/`, and `!` negation with last-match-wins); `.git/info/exclude` and the global gitignore are not read. `context --fix` writes the suggestions into `.aiignore` for you; `--json` includes the fix outcome in the output.
+Walks the repo (skipping `.git`, `node_modules` and other hidden directories) and classifies every file: build output, large files over 1 MB, lockfiles, logs, binary payloads, secret-like files and environment templates. It prints a 0–100 score, the bytes lost per category, the noisy files, the files worth a look before sharing, and the `.aiignore` entries that would fix it. Build-output directories are reported by their full path from the repo root (`packages/foo/dist/`, not a bare `dist/`) and rolled up into one row per directory, so the entry `--fix` writes matches nested build output too. A large file is fixed by its exact path from the repo root — no glob can single one file out — so `--fix` followed by a re-scan comes back clean even when the noise is a single oversized file. Files the repo's `.aiignore` already lists are excluded from the scan entirely — they are what the agent will not be handed, so they are not noise any more. Files and directories listed in `.gitignore` — at the repo root or in a subdirectory — are excluded the same way: they are already invisible to most agents, so flagging them would be noise about noise, and `--fix` will not duplicate them into `.aiignore`. The common pattern forms work (`*`, `?`, `[...]`, `**`, `/`-anchored paths, directory-only `dir/`, and `!` negation with last-match-wins); `.git/info/exclude` and the global gitignore are not read. `context --fix` writes the suggestions into `.aiignore` for you; `--json` includes the fix outcome in the output. Review items — secret-like files and environment templates — are listed for a manual look and are never written by `--fix`: they cost no score points, so the entry would fix nothing, and a basename pattern such as `secret.js` would hide every same-named file in the repo, including test fixtures. They appear as `reviewSuggestions` in `--json`, printed as advisory.
 
-The score is the *noise-only* part of ai-context-doctor's score: 100 minus the category-weighted share of noise bytes (build 40, large 25, lockfile 20, log 15). The full ai-context-doctor score also weighs context volume, one file dominating, file sprawl and binary payloads, so its composite number reads lower on the same repo. The file classification itself is the same.
+The score is the *noise-only* part of ai-context-doctor's score: 100 minus the category-weighted share of noise bytes (build 40, large 25, lockfile 20, log 15). The full ai-context-doctor score also weighs context volume, one file dominating, file sprawl and binary payloads, so its composite number reads lower on the same repo. The file classification itself is the same. Only noise in a category that actually lost points is listed as noise or suggested as a fix: a 95 B lockfile in a 1.7 MB repo loses 0 points, so it is not something to fix — a 100/100 scan lists nothing to fix.
 
 ### `path` — why a command is missing
 
@@ -112,9 +216,11 @@ Reads JUnit XML across CI runs — each subdirectory of `<junit-dir>` is one run
 ## Development
 
 ```sh
-npm test            # node:test, no extra dependencies — 82 tests
+npm test            # node:test, no extra dependencies — 124 tests, run serially
 npm run example     # run the CLI against the demo fixture
 ```
+
+The suite runs serially on purpose (`--test-concurrency=1`): the cache check times real builds, so test files running in parallel would skew its cold-vs-warm timings.
 
 There is nothing to install: the CLI has no runtime dependencies, so
 `npm test` works straight after cloning. Run the checkout as

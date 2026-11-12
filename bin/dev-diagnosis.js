@@ -11,18 +11,28 @@
  *
  * Exit codes: 0 = every check that ran passed; 1 = at least one check
  * found something to fix, or a check could not run; 2 = usage error.
+ * With --fix the exit code follows a re-scan after the fix, so a fix
+ * that leaves the repo clean exits 0.
+ *
+ * Agent modes: --mcp serves the checks over MCP on stdio (see
+ * lib/mcp.mjs); --skill-generate writes a Claude Agent Skills SKILL.md
+ * that tells an agent to run the CLI when it starts work in a repo
+ * (see lib/skill.mjs).
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { scanDirectory, applyAiignore, formatBytes } from '../lib/context.mjs';
+import { formatBytes } from '../lib/context.mjs';
 import {
-  buildContexts, findCommandCopies, fixForDirectory, lookupCommand,
-  searchToolchainBins,
-} from '../lib/pathcheck.mjs';
-import { detectCacheDir, runCacheCheck } from '../lib/cache.mjs';
-import { formatFlakesTable, scanRuns } from '../lib/flakes.mjs';
-import { formatMs, section, verdictLine } from '../lib/report.mjs';
+  UsageError, allJson, applyContextFixAndRescan, formatSummary,
+  rescanContext, runAll, runCacheCheck, runContextCheck, runFlakesCheck,
+  runPathCheck, stripCacheStdout,
+} from '../lib/checks.mjs';
+import { runMcpServer } from '../lib/mcp.mjs';
+import { generateSkill } from '../lib/skill.mjs';
+import { applySetup, checkSetup, planSetup } from '../lib/setup.mjs';
+import { formatFlakesTable } from '../lib/flakes.mjs';
+import { formatMs, formatTokens, section, verdictLine } from '../lib/report.mjs';
 
 const VERSION = JSON.parse(
   fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
@@ -36,6 +46,9 @@ Usage:
   dev-diagnosis path <command> [--json]
   dev-diagnosis cache [--json] [--cache-dir <dir>] [--cwd <dir>] -- <build-command...>
   dev-diagnosis flakes <runs-dir> [--json] [--top N]
+  dev-diagnosis --mcp [--sandbox <dir>]
+  dev-diagnosis --skill-generate [--global | --project]
+  dev-diagnosis setup [--dry-run] [--check]
   dev-diagnosis --help
   dev-diagnosis --version
 
@@ -59,33 +72,52 @@ Commands:
   flakes    Rank flaky tests from JUnit XML across CI runs, including
             passed-on-retry. Each subdirectory of <runs-dir> is one run;
             each *.xml file directly under it is a run of its own.
+  --mcp     Serve the checks as an MCP server on stdio, so any
+            MCP-compatible agent can call them as tools. See the README
+            for the client config. --sandbox <dir> (alias --root)
+            restricts every path the tools touch to that directory.
+  --skill-generate
+            Write a Claude Agent Skills SKILL.md for dev-diagnosis:
+            ./.claude/skills/dev-diagnosis/SKILL.md by default
+            (--project), or ~/.claude/skills/dev-diagnosis/SKILL.md
+            with --global. Refuses to overwrite an existing file.
+  setup     One-command install: detect the agents on this machine
+            (Claude Code, Codex CLI, Cursor, VS Code) and write the
+            MCP config that wires dev-diagnosis into each of them.
+            Prints a preview of exactly what will be written before
+            writing anything; a config that already mentions
+            dev-diagnosis is left alone. --dry-run shows the preview
+            without writing; --check reports which agents are wired.
 
 Options:
   --json          machine-readable output (context, path, cache, flakes, all)
   --fix           write the context check's .aiignore suggestions into
-                  <path>/.aiignore (context and all only). Entries that
-                  are already there are left alone; nothing else in the
-                  file is changed.
+                  <path>/.aiignore (context and all only), then re-scan:
+                  the verdict and the exit code follow the post-fix
+                  score. Entries that are already there are left alone;
+                  nothing else in the file is changed.
   --top N         show only the N highest-ranked flaky tests
+  --sandbox <dir> restrict --mcp to paths under <dir> (--root is an alias)
+  --global        with --skill-generate: write the skill to ~/.claude/skills
+  --project       with --skill-generate: write the skill to ./.claude/skills
+  --dry-run       with setup: show the preview without writing anything
+  --check         with setup: report which agents are wired, without writing
   -h, --help      show this help
   -v, --version   print the version
 
 Exit codes: 0 = every check that ran passed; 1 = a check found something
-to fix or could not run; 2 = usage error.
+to fix or could not run; 2 = usage error. With --fix the exit code
+follows a re-scan after the fix, so a fix that leaves the repo clean
+exits 0.
 `;
-
-class UsageError extends Error {
-  constructor(message) {
-    super(message);
-    this.name = 'UsageError';
-  }
-}
 
 function parseArgs(argv) {
   const parsed = {
     command: null, positional: [], json: false, fix: false, help: false, version: false,
     commandName: null, flakesDir: null, cacheDir: null, cwd: null, top: null,
     buildCommand: null, error: null,
+    mcp: false, sandbox: null, skillGenerate: false, skillGlobal: false, skillProject: false,
+    dryRun: false, check: false,
   };
   let i = 0;
   while (i < argv.length) {
@@ -98,6 +130,12 @@ function parseArgs(argv) {
     else if (arg === '--fix') parsed.fix = true;
     else if (arg === '--help' || arg === '-h') parsed.help = true;
     else if (arg === '--version' || arg === '-v') parsed.version = true;
+    else if (arg === '--mcp') parsed.mcp = true;
+    else if (arg === '--dry-run') parsed.dryRun = true;
+    else if (arg === '--check') parsed.check = true;
+    else if (arg === '--skill-generate') parsed.skillGenerate = true;
+    else if (arg === '--global') parsed.skillGlobal = true;
+    else if (arg === '--project') parsed.skillProject = true;
     else if (arg === '--command') {
       parsed.commandName = argv[i + 1];
       if (parsed.commandName === undefined) parsed.error = '--command needs a value';
@@ -118,6 +156,12 @@ function parseArgs(argv) {
       if (parsed.cwd === undefined) parsed.error = '--cwd needs a value';
       i += 1;
     } else if (arg.startsWith('--cwd=')) parsed.cwd = arg.slice('--cwd='.length);
+    else if (arg === '--sandbox' || arg === '--root') {
+      parsed.sandbox = argv[i + 1];
+      if (parsed.sandbox === undefined) parsed.error = `${arg} needs a value`;
+      i += 1;
+    } else if (arg.startsWith('--sandbox=')) parsed.sandbox = arg.slice('--sandbox='.length);
+    else if (arg.startsWith('--root=')) parsed.sandbox = arg.slice('--root='.length);
     else if (arg === '--top') {
       const value = Number(argv[i + 1]);
       if (!Number.isInteger(value) || value < 1) parsed.error = '--top needs a positive integer';
@@ -153,6 +197,12 @@ function printContext(result, json) {
       console.log(`  ${item.label} — ${item.reason} (${formatBytes(item.bytes)})`);
     }
     if (result.noise.length > 20) console.log(`  ... and ${result.noise.length - 20} more`);
+    // What the noise costs in tokens, at ~4 bytes per token — an
+    // estimate, labelled as one. Tokens are what the user pays for, so
+    // the cost belongs next to the files, not in a footnote.
+    if (result.estimatedTokens != null) {
+      console.log(`Estimated tokens wasted on this noise: ≈ ${formatTokens(result.estimatedTokens)} tokens (estimate, ~4 bytes per token)`);
+    }
   }
   if (result.review.length > 0) {
     console.log('Worth a look before sharing:');
@@ -160,24 +210,14 @@ function printContext(result, json) {
       console.log(`  ${item.label} — ${item.reason}`);
     }
   }
+  if (result.reviewSuggestions?.length > 0) {
+    console.log('Consider for .aiignore (advisory — --fix does not write these):');
+    for (const suggestion of result.reviewSuggestions) console.log(`  ${suggestion}`);
+  }
   if (result.suggestions.length > 0) {
     console.log('Fix: add these to .aiignore (or the agent\'s ignore list):');
     for (const suggestion of result.suggestions) console.log(`  ${suggestion}`);
   }
-}
-
-function runContext(target) {
-  const result = scanDirectory(target || process.cwd());
-  const passed = result.score >= 85;
-  return { result, passed, verdict: passed ? 'context is clean' : `${result.status.toLowerCase()} (score ${result.score}/100)` };
-}
-
-// Apply the context check's .aiignore suggestions and record the outcome
-// on the check result, so --json output carries it too.
-function applyContextFix(check) {
-  const fix = applyAiignore(check.result.root, check.result.suggestions);
-  check.result.fix = fix;
-  return fix;
 }
 
 function printFixLine(fix, suggestionCount) {
@@ -215,28 +255,6 @@ function printPath(result, json) {
   for (const row of unreliable) console.log(`Note: ${row.name} context fell back to the current PATH (${row.note}).`);
 }
 
-function runPath(commandName) {
-  if (!commandName) throw new UsageError('path needs a command, for example: dev-diagnosis path node');
-  const contexts = buildContexts();
-  const rows = contexts.map((ctx) => {
-    const found = lookupCommand(commandName, ctx.pathValue);
-    return { ...ctx, resolved: found.resolved, path: found.path, reason: found.reason || null };
-  });
-  const copies = findCommandCopies(commandName, process.env.PATH || '');
-  const toolchainHits = rows[0].resolved ? [] : searchToolchainBins(commandName);
-  let fix = null;
-  if (!rows[0].resolved && toolchainHits.length > 0) fix = fixForDirectory(toolchainHits[0].directory);
-  else if (!rows[0].resolved && rows.some((row) => row.resolved)) {
-    fix = 'it resolves in another shell context — check which startup file sets your PATH';
-  }
-  const passed = rows[0].resolved;
-  return {
-    result: { command: commandName, contexts: rows, copies, toolchainHits, fix },
-    passed,
-    verdict: passed ? `${commandName} resolves to ${rows[0].path}` : `${commandName} is missing in the current shell`,
-  };
-}
-
 function printFlakes(result, top, json) {
   if (json) {
     // --top limits the listing, not the scan: the tests array holds only
@@ -247,47 +265,6 @@ function printFlakes(result, top, json) {
     return;
   }
   console.log(formatFlakesTable(result, top));
-}
-
-function runFlakes(dir) {
-  if (!dir) throw new UsageError('flakes needs a runs directory, for example: dev-diagnosis flakes examples/runs');
-  const result = scanRuns(dir);
-  const unparsable = result.warnings.length;
-  const skippedRuns = result.skippedRuns ? result.skippedRuns.length : 0;
-  // A file that could not be parsed, or a run directory that produced no
-  // reports, means the verdict is based on incomplete data: "no flaky
-  // tests" on a half-read run set is not a pass, so the check fails and
-  // the verdict says what was unreadable. The warnings themselves are
-  // printed with the table.
-  const passed = result.totals.flaky === 0 && result.totals.alwaysFailing === 0 && unparsable === 0 && skippedRuns === 0;
-  const base = result.totals.flaky === 0 && result.totals.alwaysFailing === 0
-    ? `no flaky tests across ${result.totals.runs} runs`
-    : `${result.totals.flaky} flaky, ${result.totals.alwaysFailing} always-failing across ${result.totals.runs} runs`;
-  const problems = [];
-  if (unparsable > 0) problems.push(`${unparsable} file${unparsable === 1 ? '' : 's'} could not be parsed`);
-  if (skippedRuns > 0) problems.push(`${skippedRuns} run director${skippedRuns === 1 ? 'y' : 'ies'} had no JUnit XML files`);
-  return {
-    result,
-    passed,
-    verdict: problems.length > 0 ? `${base}; ${problems.join('; ')}` : base,
-  };
-}
-
-function runCache(options) {
-  if (!options.buildCommand || options.buildCommand.length === 0) {
-    throw new UsageError('cache needs a build command after --, for example: dev-diagnosis cache -- node build.mjs');
-  }
-  const result = runCacheCheck({
-    root: options.cwd || process.cwd(),
-    cacheDir: options.cacheDir,
-    command: options.buildCommand,
-  });
-  const passed = result.verdict !== 'cache costs';
-  return {
-    result,
-    passed,
-    verdict: `${result.verdict}: cold ${formatMs(result.coldMs)}, warm ${formatMs(result.warmMs)} (${result.verdictDetail})`,
-  };
 }
 
 function printCache(result, json) {
@@ -301,16 +278,57 @@ function printCache(result, json) {
   console.log(`Verdict: ${result.verdict} — ${result.verdictDetail}`);
 }
 
-// The raw cache result carries the build's full stdout from both runs;
-// JSON output drops it, so a chatty build does not bloat the machine-
-// readable output. Used by printCache and by the `all --json` builder
-// below, so both shapes stay identical.
-function stripCacheStdout(result) {
-  const { coldStdout, warmStdout, ...rest } = result;
-  return rest;
+function printSetupPreview(plan) {
+  for (const row of plan.agents) {
+    console.log(`${row.name} (${row.configPath})`);
+    if (row.status === 'already-wired') {
+      console.log('  already wired — dev-diagnosis is already in this config');
+    } else if (row.status === 'unreadable') {
+      console.log(`  skipped — ${row.note}`);
+    } else {
+      console.log(`  ${row.status} — will write:`);
+      for (const line of row.preview.replace(/\n$/, '').split('\n')) console.log(`    ${line}`);
+    }
+  }
 }
 
-function main(argv) {
+function printPathWarning(plan) {
+  if (!plan.commandOnPath) {
+    console.log('Note: `dev-diagnosis` is not on PATH — install it globally (`npm install -g dev-diagnosis-cli`) or your agents will not be able to run it.');
+  }
+}
+
+function runSetup(args) {
+  if (args.check) {
+    const result = checkSetup();
+    if (result.detected === 0) {
+      console.log('No supported agent found (looked for Claude Code, Codex CLI, Cursor, VS Code).');
+      return 1;
+    }
+    for (const row of result.rows) {
+      const state = row.wired ? 'wired' : `not wired (${row.status})`;
+      console.log(`${row.name}: ${state} — ${row.configPath}`);
+    }
+    return result.allWired ? 0 : 1;
+  }
+  const plan = planSetup();
+  if (plan.agents.length === 0) {
+    console.log('No supported agent found (looked for Claude Code, Codex CLI, Cursor, VS Code).');
+    return 1;
+  }
+  if (args.dryRun) console.log('Dry run — nothing will be written.');
+  printSetupPreview(plan);
+  if (args.dryRun) {
+    printPathWarning(plan);
+    return 0;
+  }
+  const results = applySetup(plan);
+  for (const result of results) console.log(`${result.name}: ${result.action} — ${result.detail}`);
+  printPathWarning(plan);
+  return results.some((result) => result.action === 'unreadable') ? 1 : 0;
+}
+
+async function main(argv) {
   const args = parseArgs(argv);
   if (args.error) {
     console.error(`Error: ${args.error}`);
@@ -324,6 +342,64 @@ function main(argv) {
   if (args.version) {
     console.log(VERSION);
     return 0;
+  }
+  // The three agent/install modes are exclusive: whichever the user
+  // asked for, the other two must not run — --mcp would otherwise
+  // swallow `setup --mcp` and sit on stdin waiting for messages.
+  const modes = [args.mcp, args.skillGenerate, args.command === 'setup'].filter(Boolean).length;
+  if (modes > 1) {
+    console.error('Error: --mcp, --skill-generate and setup cannot be combined.');
+    console.error('Run with --help to see the available options.');
+    return 2;
+  }
+  if (args.mcp) {
+    await runMcpServer({ sandbox: args.sandbox, version: VERSION });
+    return 0;
+  }
+  if (args.skillGenerate) {
+    if (args.skillGlobal && args.skillProject) {
+      console.error('Error: choose one of --global or --project for --skill-generate.');
+      console.error('Run with --help to see the available options.');
+      return 2;
+    }
+    const scope = args.skillGlobal ? 'global' : 'project';
+    const out = generateSkill(scope);
+    if (!out.created) {
+      console.error(`Error: ${out.reason} — refusing to overwrite it.`);
+      return 1;
+    }
+    console.log(`Wrote ${out.path}`);
+    return 0;
+  }
+  if (args.skillGlobal || args.skillProject) {
+    console.error('Error: --global and --project only apply to --skill-generate.');
+    console.error('Run with --help to see the available options.');
+    return 2;
+  }
+  if (args.sandbox) {
+    console.error('Error: --sandbox/--root only applies to --mcp.');
+    console.error('Run with --help to see the available options.');
+    return 2;
+  }
+  if (args.dryRun || args.check) {
+    if (args.command !== 'setup') {
+      console.error('Error: --dry-run and --check only apply to setup.');
+      console.error('Run with --help to see the available options.');
+      return 2;
+    }
+    if (args.dryRun && args.check) {
+      console.error('Error: choose one of --dry-run or --check for setup.');
+      console.error('Run with --help to see the available options.');
+      return 2;
+    }
+  }
+  if (args.command === 'setup') {
+    if (args.mcp || args.skillGenerate || args.json || args.fix) {
+      console.error('Error: setup cannot be combined with --mcp, --skill-generate, --json or --fix.');
+      console.error('Run with --help to see the available options.');
+      return 2;
+    }
+    return runSetup(args);
   }
 
   const command = args.command || 'all';
@@ -348,34 +424,47 @@ function main(argv) {
   try {
     if (resolvedCommand === 'context') {
       const target = args.positional[0];
-      const check = runContext(target);
-      // In --json mode the fix must be part of the printed object, so it
-      // runs before printing; in text mode the report prints first, so a
-      // failed write still leaves the diagnosis on screen.
-      if (args.fix && args.json) applyContextFix(check);
-      printContext(check.result, args.json);
-      if (args.fix && !args.json) {
-        printFixLine(applyContextFix(check), check.result.suggestions.length);
+      const check = runContextCheck(target);
+      if (args.fix) {
+        // A fix command reports the repo as it stands after the fix:
+        // re-scan and let the verdict and the exit code follow the
+        // post-fix score, or a successful fix still exits 1. In --json
+        // mode the fix runs before printing so the one printed object
+        // is the post-fix result; in text mode the pre-fix report
+        // prints first, so a failed write still leaves the diagnosis
+        // on screen.
+        if (args.json) {
+          const fixed = applyContextFixAndRescan(check);
+          console.log(JSON.stringify(fixed.result, null, 2));
+          return fixed.passed ? 0 : 1;
+        }
+        printContext(check.result, false);
+        const fixed = applyContextFixAndRescan(check);
+        printFixLine(fixed.result.fix, check.result.suggestions.length);
+        console.log(`Re-scanned after fix: Score: ${fixed.result.score}/100 — ${fixed.result.status}`);
+        console.log(verdictLine(fixed.passed, fixed.verdict));
+        return fixed.passed ? 0 : 1;
       }
+      printContext(check.result, args.json);
       if (!args.json) console.log(verdictLine(check.passed, check.verdict));
       return check.passed ? 0 : 1;
     }
     if (resolvedCommand === 'path') {
       const name = args.positional[0];
-      const check = runPath(name);
+      const check = runPathCheck(name);
       printPath(check.result, args.json);
       if (!args.json) console.log(verdictLine(check.passed, check.verdict));
       return check.passed ? 0 : 1;
     }
     if (resolvedCommand === 'flakes') {
       const dir = args.positional[0];
-      const check = runFlakes(dir);
+      const check = runFlakesCheck(dir);
       printFlakes(check.result, args.top, args.json);
       if (!args.json) console.log(verdictLine(check.passed, check.verdict));
       return check.passed ? 0 : 1;
     }
     if (resolvedCommand === 'cache') {
-      const check = runCache({ buildCommand: args.buildCommand, cacheDir: args.cacheDir, cwd: args.cwd });
+      const check = runCacheCheck({ buildCommand: args.buildCommand, cacheDir: args.cacheDir, cwd: args.cwd });
       printCache(check.result, args.json);
       if (!args.json) console.log(verdictLine(check.passed, check.verdict));
       return check.passed ? 0 : 1;
@@ -383,82 +472,38 @@ function main(argv) {
     if (resolvedCommand === 'all') {
       const target = args.positional[0];
       const root = target ? path.resolve(target) : process.cwd();
-      const checks = {};
-      const skipped = [];
+      const run = runAll({
+        root,
+        commandName: args.commandName,
+        flakesDir: args.flakesDir,
+        buildCommand: args.buildCommand,
+        cacheDir: args.cacheDir,
+      });
+      const contextCheck = run.checks.context;
+      const pathCheck = run.checks.path || null;
+      const flakesCheck = run.checks.flakes || null;
+      const cacheCheck = run.checks.cache || null;
 
-      const contextCheck = runContext(root);
-      checks.context = contextCheck;
-      let contextFix = null;
-      const getContextFix = () => {
-        if (!contextFix) contextFix = applyContextFix(contextCheck);
-        return contextFix;
-      };
-      if (args.fix && args.json) getContextFix();
-      const pathCheck = args.commandName ? runPath(args.commandName) : null;
-      if (pathCheck) checks.path = pathCheck;
-      else skipped.push('path — pass --command <name>, for example: dev-diagnosis all --command node');
-      let flakesCheck = null;
-      if (args.flakesDir) {
-        try {
-          flakesCheck = runFlakes(args.flakesDir);
-          checks.flakes = flakesCheck;
-        } catch (error) {
-          checks.flakes = { result: null, passed: false, verdict: `could not run: ${error.message}`, error: error.message };
-          flakesCheck = checks.flakes;
-        }
-      } else {
-        skipped.push('flakes — pass --flakes <runs-dir>, for example: dev-diagnosis all --flakes examples/runs');
-      }
-      let cacheCheck = null;
-      if (args.buildCommand && args.buildCommand.length > 0) {
-        try {
-          cacheCheck = runCache({ buildCommand: args.buildCommand, cacheDir: args.cacheDir, cwd: root });
-          checks.cache = cacheCheck;
-        } catch (error) {
-          if (String(error.message).includes('no cache directory found')) {
-            // Nothing to measure is not a failure: report it as skipped so
-            // `all` on a repo without a build cache does not end in FAIL.
-            skipped.push('cache — no cache directory found in this project; pass --cache-dir <dir> to measure one');
-          } else {
-            checks.cache = { result: null, passed: false, verdict: `could not run: ${error.message}`, error: error.message };
-            cacheCheck = checks.cache;
-          }
-        }
-      } else {
-        skipped.push('cache — add -- <build-command>, for example: dev-diagnosis all -- node build.mjs');
-      }
-
-      const overall = Object.values(checks).every((check) => check.passed);
       if (args.json) {
-        const out = {
-          command: 'all', root,
-          checks: Object.fromEntries(Object.entries(checks).map(([key, check]) => {
-            let result = check.result;
-            // Same --top split as the standalone flakes output: the
-            // embedded tests array is limited, totals stay whole-scan.
-            if (key === 'flakes' && result && args.top != null) {
-              result = { ...result, tests: result.tests.slice(0, args.top) };
-            }
-            // Same stdout strip as standalone `cache --json`: the raw
-            // result carries the build's full stdout from both runs.
-            if (key === 'cache' && result) result = stripCacheStdout(result);
-            // A check that could not run has no result: keep its reason
-            // in the JSON instead of emitting null, or a script consumer
-            // sees overall FAIL with no way to tell why.
-            if (result == null) result = { error: check.error || check.verdict };
-            return [key, result];
-          })),
-          skipped, overall: overall ? 'PASS' : 'FAIL',
-        };
-        console.log(JSON.stringify(out, null, 2));
-        return overall ? 0 : 1;
+        if (args.fix) {
+          run.applyContextFix();
+          rescanContext(run);
+        }
+        console.log(JSON.stringify(allJson(run, args.top), null, 2));
+        return run.overall ? 0 : 1;
       }
 
       console.log(`dev-diagnosis — ${root}`);
       console.log(section('context'));
       printContext(contextCheck.result, false);
-      if (args.fix) printFixLine(getContextFix(), contextCheck.result.suggestions.length);
-      console.log(verdictLine(contextCheck.passed, contextCheck.verdict));
+      let contextVerdict = contextCheck;
+      if (args.fix) {
+        printFixLine(run.applyContextFix(), contextCheck.result.suggestions.length);
+        const fixed = rescanContext(run);
+        console.log(`Re-scanned after fix: Score: ${fixed.result.score}/100 — ${fixed.result.status}`);
+        contextVerdict = fixed;
+      }
+      console.log(verdictLine(contextVerdict.passed, contextVerdict.verdict));
       if (pathCheck) {
         console.log(section('path'));
         printPath(pathCheck.result, false);
@@ -474,13 +519,14 @@ function main(argv) {
         if (cacheCheck.result) printCache(cacheCheck.result, false);
         console.log(verdictLine(cacheCheck.passed, cacheCheck.verdict));
       }
-      if (skipped.length > 0) {
+      if (run.skipped.length > 0) {
         console.log(section('skipped'));
-        for (const line of skipped) console.log(`  ${line}`);
+        for (const line of run.skipped) console.log(`  ${line}`);
       }
       console.log('');
-      console.log(overall ? 'Overall: PASS — nothing found to fix' : 'Overall: FAIL — see the checks above');
-      return overall ? 0 : 1;
+      console.log(run.overall ? 'Overall: PASS — nothing found to fix' : 'Overall: FAIL — see the checks above');
+      console.log(formatSummary(run.summary));
+      return run.overall ? 0 : 1;
     }
     console.error(`Error: unknown command: ${command}`);
     console.error('Run with --help to see the available options.');
@@ -496,4 +542,4 @@ function main(argv) {
   }
 }
 
-process.exitCode = main(process.argv.slice(2));
+main(process.argv.slice(2)).then((code) => { process.exitCode = code; });
