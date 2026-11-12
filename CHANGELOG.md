@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.1 — 2026-11-12
+
+- Fix: `dev-diagnosis setup` and `--skill-generate --global` wrote MCP
+  configs and skills to the wrong home directory on macOS and Windows
+  (they ignored `$HOME`). They now honour `$HOME` on all platforms.
+  v0.2.0 shipped with this bug on macOS/Windows; CI caught it after
+  the release (8 of 12 matrix jobs red) and this patch is the fix.
+- Fix: test fixtures and tests are now CRLF-safe, so the suite passes
+  on Windows checkouts as well as macOS and Linux.
+- Verified: CI 12/12 green (Ubuntu/macOS/Windows × Node 18/20/22/24).
+
 ## 0.2.0 — 2026-11-12
 
 - New: `dev-diagnosis --mcp` serves the four checks as an MCP server
