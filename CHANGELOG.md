@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.2.2 — 2026-11-13
+
+- New: the MCP server is now listed in the official MCP registry
+  (`io.github.WJDdidi-1/dev-diagnosis`). A release-triggered workflow
+  publishes the listing via GitHub OIDC, so agents can find and
+  install the server from the registry. `server.json` carries the
+  registry metadata, `scripts/check-registry-release.mjs` waits for
+  the new npm version to be live before the listing is published, and
+  `test/registry.test.mjs` keeps the metadata in sync with the
+  package version.
+- New: `llms.txt` at the repo root — a short machine-readable summary
+  for AI search and retrieval, pointing agents at the install and
+  usage commands.
+- New: `package.json` carries `mcpName` and expanded keywords
+  (`ai-agent`, `mcp`, `model-context-protocol`, `claude`,
+  `context-window`, `agent-skills`, `token-optimization`) so the
+  package is discoverable by agents searching npm.
+- Verified: local tests 127/127.
+
 ## 0.2.1 — 2026-11-12
 
 - Fix: `dev-diagnosis setup` and `--skill-generate --global` wrote MCP

@@ -1,0 +1,66 @@
+# dev-diagnosis
+
+> One offline CLI that diagnoses a repo the way four small tools do: context
+> noise for AI agents, missing CLI commands, build-cache value, and flaky
+> tests. No dependencies, no network, Node >= 18.
+
+## When to reach for it
+
+- Just took over a repo and want to know what is wrong with it: `dev-diagnosis all`
+- An AI agent keeps reading huge data dumps, logs or lockfiles: `dev-diagnosis context`
+- A command works in the terminal but not in the IDE or CI: `dev-diagnosis path <name>`
+- Builds feel slow even with a cache: `dev-diagnosis cache -- <build-command>`
+- CI goes red, then green on retry: `dev-diagnosis flakes <junit-runs-dir>`
+
+## Install and run
+
+```sh
+npx dev-diagnosis-cli
+```
+
+Or install once and use it anywhere:
+
+```sh
+npm install -g dev-diagnosis-cli
+dev-diagnosis all
+```
+
+`dev-diagnosis` with no arguments is the same as `dev-diagnosis all` on the
+current directory. `dev-diagnosis all [path] --command <name> --flakes <dir>
+-- <build-command...>` runs every check that has its input. `--json` gives
+machine-readable output. `context --fix` writes the suggestions into
+`<path>/.aiignore` and re-scans; a clean re-scan exits 0. Exit codes: 0 all
+checks that ran passed, 1 something found to fix or could not run, 2 usage
+error. `all` ends with a one-line summary of passed / failed / skipped
+checks, context noise found, and cache savings.
+
+## Let an agent run it
+
+- `dev-diagnosis setup` wires the tool into Claude Code, Codex CLI, Cursor
+  and VS Code (preview first, never overwrites existing config).
+- `dev-diagnosis --mcp` serves the same four checks as MCP tools over stdio
+  (`diagnose_context`, `diagnose_path`, `diagnose_cache`, `diagnose_flakes`,
+  `diagnose_all`); add `--sandbox <dir>` to keep it inside one repo.
+- `dev-diagnosis --skill-generate` writes a SKILL.md telling an agent to run
+  `dev-diagnosis all` when it starts work in a repo, fix what FAILs, and
+  re-run to confirm. It never overwrites an existing SKILL.md.
+
+## In CI
+
+One step runs the diagnosis and fails the job when a check fails; it runs the
+published npm package (`@latest`). The action is defined in `action.yml` at
+the repo root:
+
+```yaml
+- uses: WJDdidi-1/dev-doctor@main
+  with:
+    path: .
+    args: --command node
+```
+
+## Docs
+
+- [README](README.md): full documentation with verbatim example output
+- [CHANGELOG](CHANGELOG.md): what changed in each version
+- [npm](https://www.npmjs.com/package/dev-diagnosis-cli): published package
+- [GitHub](https://github.com/WJDdidi-1/dev-doctor): source, issues, releases

@@ -23,7 +23,14 @@
     "cli",
     "diagnostics",
     "ai-coding",
+    "ai-agent",
+    "mcp",
+    "model-context-protocol",
+    "claude",
     "context",
+    "context-window",
+    "agent-skills",
+    "token-optimization",
     "build-cache",
     "flaky-tests",
     "path",
@@ -31,6 +38,7 @@
     "offline"
   ],
   "license": "Apache-2.0",
+  "mcpName": "io.github.WJDdidi-1/dev-diagnosis",
   "name": "dev-diagnosis-cli",
   "repository": {
     "type": "git",
@@ -41,5 +49,5 @@
     "test": "node --test --test-concurrency=1"
   },
   "type": "module",
-  "version": "0.2.1"
+  "version": "0.2.2"
 }

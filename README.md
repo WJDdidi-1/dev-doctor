@@ -121,6 +121,8 @@ To keep the agent inside one repo, add `--sandbox <dir>` (alias `--root`): paths
 
 `dev-diagnosis --skill-generate` writes `.claude/skills/dev-diagnosis/SKILL.md` in the current repo (or `~/.claude/skills/dev-diagnosis/SKILL.md` with `--global`). The skill tells an agent to run `dev-diagnosis all` when it starts work in a repo, fix what FAILs, and re-run to confirm. It refuses to overwrite an existing SKILL.md, so your own edits are safe.
 
+AI agents looking for this tool: [llms.txt](llms.txt) has a short machine-readable summary.
+
 ## In CI
 
 One step runs the diagnosis and fails the job when a check fails:
@@ -216,7 +218,7 @@ Reads JUnit XML across CI runs — each subdirectory of `<junit-dir>` is one run
 ## Development
 
 ```sh
-npm test            # node:test, no extra dependencies — 124 tests, run serially
+npm test            # node:test, no extra dependencies — 127 tests, run serially
 npm run example     # run the CLI against the demo fixture
 ```
 
