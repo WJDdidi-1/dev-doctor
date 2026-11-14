@@ -8,6 +8,7 @@
  * hook runs even when the test fails, so a failing test still cleans
  * up after itself.
  */
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -21,4 +22,46 @@ export function tempDir(prefix) {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
   after(() => fs.rmSync(dir, { recursive: true, force: true }));
   return dir;
+}
+
+/**
+ * Is git installed? --changed shells out to it, so its tests skip
+ * when it is not there (the same pattern as the `script` binary skip
+ * in cli.test.mjs) instead of failing on a missing binary.
+ */
+export function hasGit() {
+  try {
+    execFileSync('git', ['--version'], { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function git(repo, ...args) {
+  return execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8' });
+}
+
+/**
+ * A real git repo in a temp dir, with local user config set so commits
+ * work without a global git config. Tests write files into it and
+ * commit with gitCommit().
+ */
+export function makeGitRepo() {
+  const dir = tempDir('dev-diagnosis-git-');
+  execFileSync('git', ['init', '-q', '-b', 'main', dir], { encoding: 'utf8' });
+  execFileSync('git', ['-C', dir, 'config', 'user.email', 'test@test.test'], { encoding: 'utf8' });
+  execFileSync('git', ['-C', dir, 'config', 'user.name', 'test'], { encoding: 'utf8' });
+  return dir;
+}
+
+export function gitCommit(repo, message) {
+  git(repo, 'add', '-A');
+  git(repo, 'commit', '-qm', message);
+}
+
+export function writeRepoFile(repo, relative, content) {
+  const full = path.join(repo, relative);
+  fs.mkdirSync(path.dirname(full), { recursive: true });
+  fs.writeFileSync(full, content);
 }

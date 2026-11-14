@@ -1,0 +1,5 @@
+repo_dir=/home/hatch/workspace/.scratch/repo-measurements/microsoft_TypeScript
+exit_code=0
+wall_seconds=8
+json_bytes=4015
+--- stderr tail ---

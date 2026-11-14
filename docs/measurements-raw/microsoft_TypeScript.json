@@ -1,0 +1,128 @@
+{
+  "command": "all",
+  "root": "/home/hatch/workspace/.scratch/repo-measurements/microsoft_TypeScript",
+  "checks": {
+    "context": {
+      "root": "/home/hatch/workspace/.scratch/repo-measurements/microsoft_TypeScript",
+      "files": 10000,
+      "bytes": 57051337,
+      "truncated": true,
+      "noise": [
+        {
+          "label": "package-lock.json",
+          "reason": "lockfile",
+          "bytes": 158517,
+          "path": "package-lock.json"
+        },
+        {
+          "label": "tsc/cmd/tsc/default.pgo",
+          "reason": "large file",
+          "bytes": 1188716,
+          "path": "tsc/cmd/tsc/default.pgo"
+        },
+        {
+          "label": "tsc/internal/bundled/libs/lib.dom.d.ts",
+          "reason": "large file",
+          "bytes": 2399570,
+          "path": "tsc/internal/bundled/libs/lib.dom.d.ts"
+        },
+        {
+          "label": "tsc/internal/checker/checker.go",
+          "reason": "large file",
+          "bytes": 1473532,
+          "path": "tsc/internal/checker/checker.go"
+        },
+        {
+          "label": "tsc/internal/execute/build/",
+          "reason": "generated build output",
+          "bytes": 100754,
+          "path": "tsc/internal/execute/build/"
+        },
+        {
+          "label": "tsc/internal/fourslash/tests/codeFixClassImplementInterfaceNoTruncationProperties_test.go",
+          "reason": "large file",
+          "bytes": 1501770,
+          "path": "tsc/internal/fourslash/tests/codeFixClassImplementInterfaceNoTruncationProperties_test.go"
+        },
+        {
+          "label": "tsc/internal/fourslash/tests/codeFixClassImplementInterfaceNoTruncation_test.go",
+          "reason": "large file",
+          "bytes": 4029319,
+          "path": "tsc/internal/fourslash/tests/codeFixClassImplementInterfaceNoTruncation_test.go"
+        },
+        {
+          "label": "tsc/internal/fourslash/tests/excessivelyLargeArrayLiteralCompletions_test.go",
+          "reason": "large file",
+          "bytes": 1144573,
+          "path": "tsc/internal/fourslash/tests/excessivelyLargeArrayLiteralCompletions_test.go"
+        }
+      ],
+      "review": [],
+      "suggestions": [
+        "package-lock.json",
+        "tsc/cmd/tsc/default.pgo",
+        "tsc/internal/bundled/libs/lib.dom.d.ts",
+        "tsc/internal/checker/checker.go",
+        "tsc/internal/execute/build/",
+        "tsc/internal/fourslash/tests/codeFixClassImplementInterfaceNoTruncationProperties_test.go",
+        "tsc/internal/fourslash/tests/codeFixClassImplementInterfaceNoTruncation_test.go",
+        "tsc/internal/fourslash/tests/excessivelyLargeArrayLiteralCompletions_test.go"
+      ],
+      "reviewSuggestions": [],
+      "score": 95,
+      "lost": 5.3,
+      "breakdown": [
+        {
+          "id": "build",
+          "label": "build output",
+          "weight": 40,
+          "bytes": 100754,
+          "share": 0.2,
+          "lost": 0.1
+        },
+        {
+          "id": "large",
+          "label": "large files",
+          "weight": 25,
+          "bytes": 11737480,
+          "share": 20.6,
+          "lost": 5.1
+        },
+        {
+          "id": "lockfile",
+          "label": "lockfiles",
+          "weight": 20,
+          "bytes": 158517,
+          "share": 0.3,
+          "lost": 0.1
+        },
+        {
+          "id": "log",
+          "label": "logs",
+          "weight": 15,
+          "bytes": 0,
+          "share": 0,
+          "lost": 0
+        }
+      ],
+      "status": "Looks clean for an AI coding agent",
+      "estimatedTokens": 2999188
+    }
+  },
+  "skipped": [
+    "path — pass --command <name>, for example: dev-diagnosis all --command node",
+    "flakes — pass --flakes <runs-dir>, for example: dev-diagnosis all --flakes examples/runs",
+    "cache — add -- <build-command>, for example: dev-diagnosis all -- node build.mjs"
+  ],
+  "overall": "PASS",
+  "summary": {
+    "checks": {
+      "total": 4,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 3
+    },
+    "contextNoiseBytes": 11996751,
+    "cacheSavedPct": null
+  }
+}

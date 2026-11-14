@@ -1,0 +1,21 @@
+{
+  "metadata": {
+    "description": "Diagnose a repo before working in it — context noise that wastes tokens, missing commands, build-cache value, flaky tests.",
+    "version": "0.2.3"
+  },
+  "name": "dev-diagnosis",
+  "owner": {
+    "name": "WJDdidi-1"
+  },
+  "plugins": [
+    {
+      "description": "Diagnose a repo before working in it: context noise that wastes tokens, missing commands, build-cache value, and flaky tests.",
+      "name": "dev-diagnosis",
+      "skills": [
+        "./skills/dev-diagnosis"
+      ],
+      "source": "./",
+      "strict": false
+    }
+  ]
+}

@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { tempDir } from '../scripts/support.mjs';
-import { detectCacheDir, runCacheCheck } from '../lib/cache.mjs';
+import { detectCacheDir, MAX_CACHE_RUNS, median, runCacheCheck } from '../lib/cache.mjs';
 
 const BUILD_SCRIPT = `
 import fs from 'node:fs';
@@ -75,6 +75,67 @@ test('runCacheCheck: refuses a cache dir outside the project', () => {
 test('runCacheCheck: needs a build command', () => {
   const root = makeProject();
   assert.throws(() => runCacheCheck({ root, command: [] }), /needs a build command/);
+});
+
+test('median: odd, even and single samples', () => {
+  assert.equal(median([300, 100, 200]), 200);
+  assert.equal(median([100, 300]), 200);
+  assert.equal(median([150]), 150);
+  assert.equal(median([500, 100, 400, 200]), 300);
+});
+
+test('runCacheCheck: runs: 3 times cold and warm, verdict on the medians, cache restored', () => {
+  const root = makeProject();
+  const before = fs.readFileSync(path.join(root, '.cache', 'out.txt'), 'utf8');
+  const result = runCacheCheck({ root, command: ['node', 'build.mjs'], runs: 3 });
+  assert.equal(result.runs, 3);
+  assert.equal(result.coldRuns.length, 3);
+  assert.equal(result.warmRuns.length, 3);
+  assert.equal(result.coldMs, median(result.coldRuns));
+  assert.equal(result.warmMs, median(result.warmRuns));
+  assert.equal(result.verdict, 'cache pays');
+  assert.match(result.verdictDetail, /median of 3 runs each/);
+  assert.equal(fs.readFileSync(path.join(root, '.cache', 'out.txt'), 'utf8'), before);
+  // No stash left behind.
+  assert.ok(!fs.readdirSync(root).some((name) => name.startsWith('.dev-diagnosis-stash-')));
+});
+
+test('runCacheCheck: runs: 1 is the default and keeps the old shape', () => {
+  const root = makeProject();
+  const result = runCacheCheck({ root, command: ['node', 'build.mjs'] });
+  assert.equal(result.runs, 1);
+  assert.equal(result.coldRuns.length, 1);
+  assert.equal(result.coldMs, result.coldRuns[0]);
+  assert.equal(result.verdict, 'cache pays');
+});
+
+test('runCacheCheck: runs outside 1..10 is refused', () => {
+  const root = makeProject();
+  for (const bad of [0, MAX_CACHE_RUNS + 1, 2.5, '3']) {
+    assert.throws(
+      () => runCacheCheck({ root, command: ['node', 'build.mjs'], runs: bad }),
+      /runs must be an integer from 1 to 10/,
+    );
+  }
+});
+
+test('runCacheCheck: the cache is restored when a later cold run fails, and the error names the run', () => {
+  const root = makeProject();
+  // Fails on the second invocation: the counter lives in the project
+  // root, outside .cache, so it survives the stash-and-restore dance.
+  fs.writeFileSync(path.join(root, 'build.mjs'), `
+import fs from 'node:fs';
+import path from 'node:path';
+const counter = path.join(process.cwd(), 'count.txt');
+const n = (fs.existsSync(counter) ? Number(fs.readFileSync(counter, 'utf8')) : 0) + 1;
+fs.writeFileSync(counter, String(n));
+if (n === 2) process.exit(3);
+`);
+  assert.throws(
+    () => runCacheCheck({ root, command: ['node', 'build.mjs'], runs: 3 }),
+    /cold build failed on run 2 of 3 \(exit 3\)/,
+  );
+  assert.equal(fs.readFileSync(path.join(root, '.cache', 'out.txt'), 'utf8'), 'built\n');
 });
 
 test('detectCacheDir: finds .cache, and returns null when there is none', () => {

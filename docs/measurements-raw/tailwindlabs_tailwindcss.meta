@@ -1,0 +1,5 @@
+repo_dir=/home/hatch/workspace/.scratch/repo-measurements/tailwindlabs_tailwindcss
+exit_code=0
+wall_seconds=4
+json_bytes=2206
+--- stderr tail ---

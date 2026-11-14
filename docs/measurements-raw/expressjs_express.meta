@@ -1,0 +1,5 @@
+repo_dir=/home/hatch/workspace/.scratch/repo-measurements/expressjs_express
+exit_code=0
+wall_seconds=4
+json_bytes=1693
+--- stderr tail ---

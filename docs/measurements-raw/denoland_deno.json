@@ -1,0 +1,362 @@
+{
+  "command": "all",
+  "root": "/home/hatch/workspace/.scratch/repo-measurements/denoland_deno",
+  "checks": {
+    "context": {
+      "root": "/home/hatch/workspace/.scratch/repo-measurements/denoland_deno",
+      "files": 10000,
+      "bytes": 83442767,
+      "truncated": true,
+      "noise": [
+        {
+          "label": "cli/tools/coverage/",
+          "reason": "test coverage output",
+          "bytes": 118326,
+          "path": "cli/tools/coverage/"
+        },
+        {
+          "label": "cli/tsc/00_typescript.js",
+          "reason": "large file",
+          "bytes": 9144216,
+          "path": "cli/tsc/00_typescript.js"
+        },
+        {
+          "label": "cli/tsc/dts/lib.dom.d.ts",
+          "reason": "large file",
+          "bytes": 2349590,
+          "path": "cli/tsc/dts/lib.dom.d.ts"
+        },
+        {
+          "label": "tests/bench/testdata/npm/hono/dist/",
+          "reason": "generated build output",
+          "bytes": 108883,
+          "path": "tests/bench/testdata/npm/hono/dist/"
+        },
+        {
+          "label": "tests/registry/npm/@denotest/cjs-deep-relative-reexport/1.0.0/dist/",
+          "reason": "generated build output",
+          "bytes": 875,
+          "path": "tests/registry/npm/@denotest/cjs-deep-relative-reexport/1.0.0/dist/"
+        },
+        {
+          "label": "tests/registry/npm/@denotest/cjs-pkg-imports/1.0.0/sub/dist/",
+          "reason": "generated build output",
+          "bytes": 74,
+          "path": "tests/registry/npm/@denotest/cjs-pkg-imports/1.0.0/sub/dist/"
+        },
+        {
+          "label": "tests/registry/npm/@denotest/css-export/1.0.0/dist/",
+          "reason": "generated build output",
+          "bytes": 7,
+          "path": "tests/registry/npm/@denotest/css-export/1.0.0/dist/"
+        },
+        {
+          "label": "tests/registry/npm/@denotest/esm-import-deep-cjs/1.0.0/dist/",
+          "reason": "generated build output",
+          "bytes": 143,
+          "path": "tests/registry/npm/@denotest/esm-import-deep-cjs/1.0.0/dist/"
+        },
+        {
+          "label": "tests/registry/npm/@denotest/legacy-subpath-main/1.0.0/dist/",
+          "reason": "generated build output",
+          "bytes": 58,
+          "path": "tests/registry/npm/@denotest/legacy-subpath-main/1.0.0/dist/"
+        },
+        {
+          "label": "tests/registry/npm/@denotest/mjs-reexport-cjs/1.0.0/dist/",
+          "reason": "generated build output",
+          "bytes": 264,
+          "path": "tests/registry/npm/@denotest/mjs-reexport-cjs/1.0.0/dist/"
+        },
+        {
+          "label": "tests/registry/npm/@denotest/peer-dep-test-grandchild/1.0.0/dist/",
+          "reason": "generated build output",
+          "bytes": 58,
+          "path": "tests/registry/npm/@denotest/peer-dep-test-grandchild/1.0.0/dist/"
+        },
+        {
+          "label": "tests/registry/npm/@denotest/types-entry-value-not-exists/1.0.0/dist/",
+          "reason": "generated build output",
+          "bytes": 66,
+          "path": "tests/registry/npm/@denotest/types-entry-value-not-exists/1.0.0/dist/"
+        },
+        {
+          "label": "tests/registry/npm/@denotest/types-exports-import-types/1.0.0/dist/",
+          "reason": "generated build output",
+          "bytes": 74,
+          "path": "tests/registry/npm/@denotest/types-exports-import-types/1.0.0/dist/"
+        },
+        {
+          "label": "tests/registry/npm/@denotest/types-exports-subpaths/1.0.0/dist/",
+          "reason": "generated build output",
+          "bytes": 190,
+          "path": "tests/registry/npm/@denotest/types-exports-subpaths/1.0.0/dist/"
+        },
+        {
+          "label": "tests/registry/npm/@denotest/types-no-types-entry/1.0.0/dist/",
+          "reason": "generated build output",
+          "bytes": 153,
+          "path": "tests/registry/npm/@denotest/types-no-types-entry/1.0.0/dist/"
+        },
+        {
+          "label": "tests/registry/npm/@denotest/unicode-subpath/1.0.0/dist/",
+          "reason": "generated build output",
+          "bytes": 33,
+          "path": "tests/registry/npm/@denotest/unicode-subpath/1.0.0/dist/"
+        },
+        {
+          "label": "tests/registry/npm/@types/node/registry.json",
+          "reason": "large file",
+          "bytes": 10447646,
+          "path": "tests/registry/npm/@types/node/registry.json"
+        },
+        {
+          "label": "tests/registry/npm/npm-check-updates/npm-check-updates-17.1.13.tgz",
+          "reason": "large file",
+          "bytes": 1495496,
+          "path": "tests/registry/npm/npm-check-updates/npm-check-updates-17.1.13.tgz"
+        },
+        {
+          "label": "tests/registry/npm/playwright-core/playwright-core-1.60.0.tgz",
+          "reason": "large file",
+          "bytes": 2814257,
+          "path": "tests/registry/npm/playwright-core/playwright-core-1.60.0.tgz"
+        },
+        {
+          "label": "tests/registry/npm/react-dom/react-dom-18.2.0.tgz",
+          "reason": "large file",
+          "bytes": 1087708,
+          "path": "tests/registry/npm/react-dom/react-dom-18.2.0.tgz"
+        },
+        {
+          "label": "tests/specs/build/",
+          "reason": "generated build output",
+          "bytes": 4035,
+          "path": "tests/specs/build/"
+        },
+        {
+          "label": "tests/specs/compile/workspace_package_json_exports/libs/lib/dist/",
+          "reason": "generated build output",
+          "bytes": 87,
+          "path": "tests/specs/compile/workspace_package_json_exports/libs/lib/dist/"
+        },
+        {
+          "label": "tests/specs/coverage/",
+          "reason": "test coverage output",
+          "bytes": 28222,
+          "path": "tests/specs/coverage/"
+        },
+        {
+          "label": "tests/specs/publish/tsconfig_excluded/dist/",
+          "reason": "generated build output",
+          "bytes": 44,
+          "path": "tests/specs/publish/tsconfig_excluded/dist/"
+        }
+      ],
+      "review": [
+        {
+          "label": "cli/ops/deploy.rs",
+          "reason": "deployment script",
+          "bytes": 1124,
+          "path": "cli/ops/deploy.rs"
+        },
+        {
+          "label": "cli/tools/deploy.rs",
+          "reason": "deployment script",
+          "bytes": 4118,
+          "path": "cli/tools/deploy.rs"
+        },
+        {
+          "label": "tests/registry/jsr/@deno/deploy/0.220.1/main.ts",
+          "reason": "deployment script",
+          "bytes": 21,
+          "path": "tests/registry/jsr/@deno/deploy/0.220.1/main.ts"
+        },
+        {
+          "label": "tests/registry/jsr/@deno/deploy/0.220.1_meta.json",
+          "reason": "deployment script",
+          "bytes": 44,
+          "path": "tests/registry/jsr/@deno/deploy/0.220.1_meta.json"
+        },
+        {
+          "label": "tests/registry/jsr/@deno/deploy/meta.json",
+          "reason": "deployment script",
+          "bytes": 103,
+          "path": "tests/registry/jsr/@deno/deploy/meta.json"
+        },
+        {
+          "label": "tests/specs/audit/ca_store/RootCA.pem",
+          "reason": "environment-like file",
+          "bytes": 1147,
+          "path": "tests/specs/audit/ca_store/RootCA.pem"
+        },
+        {
+          "label": "tests/specs/cert/cafile_compile/RootCA.pem",
+          "reason": "environment-like file",
+          "bytes": 1147,
+          "path": "tests/specs/cert/cafile_compile/RootCA.pem"
+        },
+        {
+          "label": "tests/specs/cert/cafile_env_fetch/RootCA.pem",
+          "reason": "environment-like file",
+          "bytes": 1147,
+          "path": "tests/specs/cert/cafile_env_fetch/RootCA.pem"
+        },
+        {
+          "label": "tests/specs/cert/cafile_install/RootCA.pem",
+          "reason": "environment-like file",
+          "bytes": 1147,
+          "path": "tests/specs/cert/cafile_install/RootCA.pem"
+        },
+        {
+          "label": "tests/specs/cert/cafile_ts_fetch/RootCA.pem",
+          "reason": "environment-like file",
+          "bytes": 1147,
+          "path": "tests/specs/cert/cafile_ts_fetch/RootCA.pem"
+        },
+        {
+          "label": "tests/specs/cert/cafile_url_imports/RootCA.pem",
+          "reason": "environment-like file",
+          "bytes": 1147,
+          "path": "tests/specs/cert/cafile_url_imports/RootCA.pem"
+        },
+        {
+          "label": "tests/specs/compile/dynamic_import_read_permission/outside/secret.json",
+          "reason": "environment-like file",
+          "bytes": 24,
+          "path": "tests/specs/compile/dynamic_import_read_permission/outside/secret.json"
+        },
+        {
+          "label": "tests/specs/compile/env_vars_support/environment.env",
+          "reason": "environment-like file",
+          "bytes": 63,
+          "path": "tests/specs/compile/env_vars_support/environment.env"
+        },
+        {
+          "label": "tests/specs/deploy/help_success/__test__.jsonc",
+          "reason": "deployment script",
+          "bytes": 56,
+          "path": "tests/specs/deploy/help_success/__test__.jsonc"
+        },
+        {
+          "label": "tests/specs/node/tls_happy_eyeballs/localhost.key",
+          "reason": "environment-like file",
+          "bytes": 1708,
+          "path": "tests/specs/node/tls_happy_eyeballs/localhost.key"
+        },
+        {
+          "label": "tests/specs/npm/byonm_main_path_traversal/secret.json",
+          "reason": "environment-like file",
+          "bytes": 39,
+          "path": "tests/specs/npm/byonm_main_path_traversal/secret.json"
+        },
+        {
+          "label": "tests/specs/npm/npmrc_certfile/RootCA.pem",
+          "reason": "environment-like file",
+          "bytes": 1147,
+          "path": "tests/specs/npm/npmrc_certfile/RootCA.pem"
+        },
+        {
+          "label": "tests/specs/npm/npmrc_certfile/client.key",
+          "reason": "environment-like file",
+          "bytes": 1708,
+          "path": "tests/specs/npm/npmrc_certfile/client.key"
+        },
+        {
+          "label": "tests/specs/npm/npmrc_certfile/client.pem",
+          "reason": "environment-like file",
+          "bytes": 1245,
+          "path": "tests/specs/npm/npmrc_certfile/client.pem"
+        }
+      ],
+      "suggestions": [
+        "cli/tools/coverage/",
+        "cli/tsc/00_typescript.js",
+        "cli/tsc/dts/lib.dom.d.ts",
+        "tests/bench/testdata/npm/hono/dist/",
+        "tests/registry/npm/@denotest/cjs-deep-relative-reexport/1.0.0/dist/",
+        "tests/registry/npm/@denotest/cjs-pkg-imports/1.0.0/sub/dist/",
+        "tests/registry/npm/@denotest/css-export/1.0.0/dist/",
+        "tests/registry/npm/@denotest/esm-import-deep-cjs/1.0.0/dist/",
+        "tests/registry/npm/@denotest/legacy-subpath-main/1.0.0/dist/",
+        "tests/registry/npm/@denotest/mjs-reexport-cjs/1.0.0/dist/",
+        "tests/registry/npm/@denotest/peer-dep-test-grandchild/1.0.0/dist/",
+        "tests/registry/npm/@denotest/types-entry-value-not-exists/1.0.0/dist/",
+        "tests/registry/npm/@denotest/types-exports-import-types/1.0.0/dist/",
+        "tests/registry/npm/@denotest/types-exports-subpaths/1.0.0/dist/",
+        "tests/registry/npm/@denotest/types-no-types-entry/1.0.0/dist/",
+        "tests/registry/npm/@denotest/unicode-subpath/1.0.0/dist/",
+        "tests/registry/npm/@types/node/registry.json",
+        "tests/registry/npm/npm-check-updates/npm-check-updates-17.1.13.tgz",
+        "tests/registry/npm/playwright-core/playwright-core-1.60.0.tgz",
+        "tests/registry/npm/react-dom/react-dom-18.2.0.tgz",
+        "tests/specs/build/",
+        "tests/specs/compile/workspace_package_json_exports/libs/lib/dist/",
+        "tests/specs/coverage/",
+        "tests/specs/publish/tsconfig_excluded/dist/"
+      ],
+      "reviewSuggestions": [
+        "RootCA.pem",
+        "client.key",
+        "client.pem",
+        "environment.env",
+        "localhost.key",
+        "secret.json"
+      ],
+      "score": 92,
+      "lost": 8.3,
+      "breakdown": [
+        {
+          "id": "build",
+          "label": "build output",
+          "weight": 40,
+          "bytes": 261592,
+          "share": 0.3,
+          "lost": 0.1
+        },
+        {
+          "id": "large",
+          "label": "large files",
+          "weight": 25,
+          "bytes": 27338913,
+          "share": 32.8,
+          "lost": 8.2
+        },
+        {
+          "id": "lockfile",
+          "label": "lockfiles",
+          "weight": 20,
+          "bytes": 2967,
+          "share": 0,
+          "lost": 0
+        },
+        {
+          "id": "log",
+          "label": "logs",
+          "weight": 15,
+          "bytes": 0,
+          "share": 0,
+          "lost": 0
+        }
+      ],
+      "status": "Looks clean for an AI coding agent",
+      "estimatedTokens": 6900126
+    }
+  },
+  "skipped": [
+    "path — pass --command <name>, for example: dev-diagnosis all --command node",
+    "flakes — pass --flakes <runs-dir>, for example: dev-diagnosis all --flakes examples/runs",
+    "cache — add -- <build-command>, for example: dev-diagnosis all -- node build.mjs"
+  ],
+  "overall": "PASS",
+  "summary": {
+    "checks": {
+      "total": 4,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 3
+    },
+    "contextNoiseBytes": 27600505,
+    "cacheSavedPct": null
+  }
+}

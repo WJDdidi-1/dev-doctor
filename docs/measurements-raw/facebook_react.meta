@@ -1,0 +1,5 @@
+repo_dir=/home/hatch/workspace/.scratch/repo-measurements/facebook_react
+exit_code=0
+wall_seconds=8
+json_bytes=13293
+--- stderr tail ---

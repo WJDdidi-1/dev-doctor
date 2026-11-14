@@ -4,7 +4,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { tempDir } from '../scripts/support.mjs';
+import { gitCommit, hasGit, makeGitRepo, tempDir, writeRepoFile } from '../scripts/support.mjs';
+import { AIIGNORE_HEADER } from '../lib/context.mjs';
 import { fileURLToPath } from 'node:url';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -111,6 +112,29 @@ test('mcp: initialize, tools/list, tools/call and ping answer valid JSON-RPC', a
       list.result.tools.map((tool) => tool.name),
       ['diagnose_context', 'diagnose_path', 'diagnose_cache', 'diagnose_flakes', 'diagnose_all'],
     );
+    // The annotations are what an MCP client uses to decide whether
+    // to ask before calling: they describe what the tool *may* do.
+    // A tool with an optional fix is not read-only, even when the
+    // caller passes fix: false; the cache tool runs a build command
+    // and its timings vary, so it is neither read-only nor
+    // idempotent; the two pure reads are.
+    assert.deepEqual(
+      Object.fromEntries(list.result.tools.map((tool) => [tool.name, tool.annotations])),
+      {
+        diagnose_context: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+        diagnose_path: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        diagnose_cache: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+        diagnose_flakes: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        diagnose_all: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+      },
+    );
+    // Descriptions carry what + when + keywords (the spec rule): an
+    // agent decides whether to call a tool from its description, so
+    // each one states when to use it and what it matches on.
+    for (const tool of list.result.tools) {
+      assert.match(tool.description, /Use when /);
+      assert.match(tool.description, /Keywords: /);
+    }
     assert.equal(context.id, 3);
     assert.equal(context.result.isError, false);
     const contextResult = JSON.parse(context.result.content[0].text);
@@ -163,6 +187,24 @@ test('mcp: diagnose_flakes and diagnose_cache work as tools', async () => {
   }
 });
 
+test('mcp: diagnose_cache with runs times the build repeatedly and reports the medians', async () => {
+  const client = new McpClient(['--mcp', '--sandbox', freshExamples()]);
+  try {
+    client.send({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'diagnose_cache', arguments: { path: 'demo-repo', command: ['node', 'build.mjs'], runs: 3 } } });
+    client.send({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'diagnose_cache', arguments: { path: 'demo-repo', command: ['node', 'build.mjs'], runs: 11 } } });
+    const [repeated, invalid] = parse(await client.waitFor(2));
+    const result = JSON.parse(repeated.result.content[0].text);
+    assert.equal(result.runs, 3);
+    assert.equal(result.coldRuns.length, 3);
+    assert.equal(result.warmRuns.length, 3);
+    assert.equal(result.verdict, 'cache pays');
+    assert.equal(invalid.result.isError, true);
+    assert.match(invalid.result.content[0].text, /runs must be an integer from 1 to 10/);
+  } finally {
+    await client.close();
+  }
+});
+
 test('mcp: a path outside the sandbox is rejected as a tool error', async () => {
   const client = new McpClient(['--mcp', '--sandbox', examples]);
   try {
@@ -208,6 +250,53 @@ test('mcp: a malformed line gets a -32700 parse error and the server keeps going
   }
 });
 
+test('mcp: diagnose_context with fix + dryRun previews and writes nothing', async () => {
+  // The CLI's --fix --dry-run has an MCP twin: an agent that wants to
+  // see the fix before it lands gets the pre-fix 75/100 with the plan
+  // marked dryRun, and no .aiignore appears on disk.
+  const copy = freshExamples();
+  const client = new McpClient(['--mcp', '--sandbox', copy]);
+  try {
+    client.send({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'diagnose_context', arguments: { path: 'demo-repo', fix: true, dryRun: true } } });
+    const [preview] = parse(await client.waitFor(1));
+    assert.equal(preview.result.isError, false);
+    const result = JSON.parse(preview.result.content[0].text);
+    assert.equal(result.score, 75);
+    assert.equal(result.fix.dryRun, true);
+    assert.deepEqual(result.fix.added, ['data/export.json']);
+    assert.equal(fs.existsSync(path.join(copy, 'demo-repo', '.aiignore')), false);
+    // The repo is untouched: a plain call still scores 75.
+    client.send({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'diagnose_context', arguments: { path: 'demo-repo' } } });
+    const [, again] = parse(await client.waitFor(2));
+    assert.equal(JSON.parse(again.result.content[0].text).score, 75);
+  } finally {
+    await client.close();
+  }
+});
+
+test('mcp: diagnose_all with fix + dryRun previews; dryRun without fix is an error', async () => {
+  const copy = freshExamples();
+  const client = new McpClient(['--mcp', '--sandbox', copy]);
+  try {
+    client.send({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'diagnose_all', arguments: { path: 'demo-repo', fix: true, dryRun: true } } });
+    const [preview] = parse(await client.waitFor(1));
+    assert.equal(preview.result.isError, false);
+    const result = JSON.parse(preview.result.content[0].text);
+    assert.equal(result.overall, 'FAIL');
+    assert.equal(result.checks.context.score, 75);
+    assert.equal(result.checks.context.fix.dryRun, true);
+    assert.deepEqual(result.checks.context.fix.added, ['data/export.json']);
+    assert.equal(fs.existsSync(path.join(copy, 'demo-repo', '.aiignore')), false);
+    // dryRun without fix is a usage error, like --dry-run without --fix.
+    client.send({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'diagnose_context', arguments: { path: 'demo-repo', dryRun: true } } });
+    const [, errored] = parse(await client.waitFor(2));
+    assert.equal(errored.result.isError, true);
+    assert.match(errored.result.content[0].text, /dryRun needs fix/);
+  } finally {
+    await client.close();
+  }
+});
+
 test('mcp: diagnose_context with fix answers with the post-fix scan', async () => {
   // An agent that asks for a fix needs to read whether the repo is
   // fixed now — not the pre-fix 75/100. The tool writes .aiignore into
@@ -221,11 +310,87 @@ test('mcp: diagnose_context with fix answers with the post-fix scan', async () =
     const result = JSON.parse(fixed.result.content[0].text);
     assert.equal(result.score, 94);
     assert.deepEqual(result.fix.added, ['data/export.json']);
-    assert.equal(fs.readFileSync(path.join(copy, 'demo-repo', '.aiignore'), 'utf8'), 'data/export.json\n');
+    assert.equal(fs.readFileSync(path.join(copy, 'demo-repo', '.aiignore'), 'utf8'), `${AIIGNORE_HEADER.join('\n')}\ndata/export.json\n`);
     // A second call without fix sees the fixed repo.
     client.send({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'diagnose_context', arguments: { path: 'demo-repo' } } });
     const [, again] = parse(await client.waitFor(2));
     assert.equal(JSON.parse(again.result.content[0].text).score, 94);
+  } finally {
+    await client.close();
+  }
+});
+
+test('mcp: diagnose_context and diagnose_all take changedRef', async () => {
+  const client = new McpClient(['--mcp', '--sandbox', freshExamples()]);
+  try {
+    client.send({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
+    const [list] = parse(await client.waitFor(1));
+    const byName = Object.fromEntries(list.result.tools.map((tool) => [tool.name, tool]));
+    assert.equal(byName.diagnose_context.inputSchema.properties.changedRef.type, 'string');
+    assert.equal(byName.diagnose_all.inputSchema.properties.changedRef.type, 'string');
+    assert.equal(byName.diagnose_path.inputSchema.properties.changedRef, undefined);
+  } finally {
+    await client.close();
+  }
+});
+
+test('mcp: diagnose_context with changedRef scopes to the change', async (t) => {
+  if (!hasGit()) t.skip('git is not installed');
+  const repo = makeGitRepo();
+  writeRepoFile(repo, 'src/app.js', 'console.log("clean");\n');
+  writeRepoFile(repo, 'old-debug.log', 'x'.repeat(1200000));
+  gitCommit(repo, 'commit 1: clean app + committed log');
+  writeRepoFile(repo, 'logs/new-debug.log', 'y'.repeat(1200000));
+  const client = new McpClient(['--mcp', '--sandbox', repo]);
+  try {
+    // No path: the sandbox root is the repo.
+    client.send({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'diagnose_context', arguments: { changedRef: 'HEAD' } } });
+    const [scoped] = parse(await client.waitFor(1));
+    assert.equal(scoped.result.isError, false, scoped.result.content[0].text);
+    const result = JSON.parse(scoped.result.content[0].text);
+    assert.equal(result.files, 1);
+    assert.deepEqual(result.changed, { ref: 'HEAD', files: ['logs/new-debug.log'] });
+    assert.equal(result.noise.length, 1);
+  } finally {
+    await client.close();
+  }
+});
+
+test('mcp: diagnose_context with changedRef outside a git repo is an error result', async () => {
+  const client = new McpClient(['--mcp', '--sandbox', freshExamples()]);
+  try {
+    client.send({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'diagnose_context', arguments: { changedRef: 'HEAD' } } });
+    const [result] = parse(await client.waitFor(1));
+    assert.equal(result.result.isError, true);
+    assert.match(result.result.content[0].text, /not a git repository/);
+  } finally {
+    await client.close();
+  }
+});
+
+test('mcp: prompts/list and prompts/get serve the diagnose_repo workflow', async () => {
+  const client = new McpClient(['--mcp']);
+  try {
+    client.send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'test', version: '0' } } });
+    client.send({ jsonrpc: '2.0', id: 2, method: 'prompts/list' });
+    client.send({ jsonrpc: '2.0', id: 3, method: 'prompts/get', params: { name: 'diagnose_repo', arguments: { path: 'demo-repo' } } });
+    client.send({ jsonrpc: '2.0', id: 4, method: 'prompts/get', params: { name: 'diagnose_repo' } });
+    client.send({ jsonrpc: '2.0', id: 5, method: 'prompts/get', params: { name: 'nope' } });
+    const [init, list, withPath, withoutPath, unknown] = parse(await client.waitFor(5));
+    // initialize advertises the prompts capability, so a client that
+    // surfaces prompts knows to ask for them.
+    assert.deepEqual(init.result.capabilities, { tools: {}, prompts: {} });
+    assert.deepEqual(list.result.prompts.map((prompt) => prompt.name), ['diagnose_repo']);
+    assert.equal(list.result.prompts[0].arguments[0].name, 'path');
+    assert.equal(list.result.prompts[0].arguments[0].required, false);
+    assert.equal(withPath.result.messages[0].role, 'user');
+    const text = withPath.result.messages[0].content.text;
+    assert.match(text, /diagnose_all/);
+    assert.match(text, /"demo-repo"/);
+    assert.match(text, /do not write \.aiignore without the user agreeing/);
+    assert.match(withoutPath.result.messages[0].content.text, /"\."/);
+    assert.equal(unknown.error.code, -32602);
+    assert.match(unknown.error.message, /unknown prompt: nope/);
   } finally {
     await client.close();
   }

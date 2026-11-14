@@ -1,0 +1,79 @@
+{
+  "command": "all",
+  "root": "/home/hatch/workspace/.scratch/repo-measurements/vuejs_vue",
+  "checks": {
+    "context": {
+      "root": "/home/hatch/workspace/.scratch/repo-measurements/vuejs_vue",
+      "files": 505,
+      "bytes": 2542869,
+      "truncated": false,
+      "noise": [
+        {
+          "label": "pnpm-lock.yaml",
+          "reason": "lockfile",
+          "bytes": 235642,
+          "path": "pnpm-lock.yaml"
+        }
+      ],
+      "review": [],
+      "suggestions": [
+        "pnpm-lock.yaml"
+      ],
+      "reviewSuggestions": [],
+      "score": 98,
+      "lost": 1.9,
+      "breakdown": [
+        {
+          "id": "build",
+          "label": "build output",
+          "weight": 40,
+          "bytes": 0,
+          "share": 0,
+          "lost": 0
+        },
+        {
+          "id": "large",
+          "label": "large files",
+          "weight": 25,
+          "bytes": 0,
+          "share": 0,
+          "lost": 0
+        },
+        {
+          "id": "lockfile",
+          "label": "lockfiles",
+          "weight": 20,
+          "bytes": 235642,
+          "share": 9.3,
+          "lost": 1.9
+        },
+        {
+          "id": "log",
+          "label": "logs",
+          "weight": 15,
+          "bytes": 0,
+          "share": 0,
+          "lost": 0
+        }
+      ],
+      "status": "Looks clean for an AI coding agent",
+      "estimatedTokens": 58911
+    }
+  },
+  "skipped": [
+    "path — pass --command <name>, for example: dev-diagnosis all --command node",
+    "flakes — pass --flakes <runs-dir>, for example: dev-diagnosis all --flakes examples/runs",
+    "cache — add -- <build-command>, for example: dev-diagnosis all -- node build.mjs"
+  ],
+  "overall": "PASS",
+  "summary": {
+    "checks": {
+      "total": 4,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 3
+    },
+    "contextNoiseBytes": 235642,
+    "cacheSavedPct": null
+  }
+}

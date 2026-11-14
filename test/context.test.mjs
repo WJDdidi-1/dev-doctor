@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { tempDir } from '../scripts/support.mjs';
-import { applyAiignore, classifyPath, isGitignored, matchesAiignore, parseGitignore, scanDirectory } from '../lib/context.mjs';
+import { AIIGNORE_HEADER, applyAiignore, classifyPath, isGitignored, matchesAiignore, parseGitignore, planAiignore, scanDirectory, topNoiseDirectories } from '../lib/context.mjs';
 
 function makeRepo(files) {
   const root = tempDir('dev-diagnosis-context-');
@@ -50,6 +50,32 @@ test('classifyPath: a nested build directory is labelled by its full path', () =
   assert.equal(nested.suggestion, 'packages/foo/dist/');
   assert.equal(classifyPath('dist/app.js').noise.label, 'dist/');
   assert.equal(classifyPath('dist/app.js').suggestion, 'dist/');
+});
+
+test('scanDirectory: an explicit maxFiles still caps the walk and says so', () => {
+  const files = {};
+  for (let i = 0; i < 10; i += 1) files[`src/f${i}.js`] = 'x\n';
+  const root = makeRepo(files);
+  const capped = scanDirectory(root, { maxFiles: 5 });
+  assert.equal(capped.files, 5);
+  assert.equal(capped.truncated, true);
+  const full = scanDirectory(root, { maxFiles: 50 });
+  assert.equal(full.files, 10);
+  assert.equal(full.truncated, false);
+});
+
+test('scanDirectory: the default cap covers a repo bigger than the old 10,000 limit', () => {
+  // nodejs/node is ~53,000 files once ignored directories are out; the
+  // old 10,000 default made its token estimate a ~2x lower bound.
+  // 10,200 tiny files is enough to prove the default is past 10,000
+  // without paying for a full big-repo fixture.
+  const root = tempDir('dev-diagnosis-context-big-');
+  for (let i = 0; i < 10200; i += 1) {
+    fs.writeFileSync(path.join(root, `f${i}.js`), 'x\n');
+  }
+  const result = scanDirectory(root);
+  assert.equal(result.files, 10200);
+  assert.equal(result.truncated, false);
 });
 
 test('scanDirectory: files under one build directory roll up into one row', () => {
@@ -194,7 +220,75 @@ test('applyAiignore: creates .aiignore with the suggestions', () => {
   const fix = applyAiignore(root, ['dist/', 'package-lock.json']);
   assert.equal(fix.created, true);
   assert.deepEqual(fix.added, ['dist/', 'package-lock.json']);
-  assert.equal(fs.readFileSync(path.join(root, '.aiignore'), 'utf8'), 'dist/\npackage-lock.json\n');
+  // A new file starts with the header saying what wrote it; the header
+  // is comments, not patterns, so a second run adds nothing.
+  const expected = `${AIIGNORE_HEADER.join('\n')}\ndist/\npackage-lock.json\n`;
+  assert.equal(fs.readFileSync(path.join(root, '.aiignore'), 'utf8'), expected);
+  const again = applyAiignore(root, ['dist/', 'package-lock.json']);
+  assert.deepEqual(again.added, []);
+  assert.equal(fs.readFileSync(path.join(root, '.aiignore'), 'utf8'), expected);
+  assert.equal(matchesAiignore('dist/app.js', AIIGNORE_HEADER), false);
+});
+
+test('applyAiignore: an empty existing file gets the header, a non-empty one does not', () => {  const empty = makeRepo({ 'src/index.js': 'x\n', '.aiignore': '' });
+  applyAiignore(empty, ['dist/']);
+  assert.equal(
+    fs.readFileSync(path.join(empty, '.aiignore'), 'utf8'),
+    `${AIIGNORE_HEADER.join('\n')}\ndist/\n`,
+  );
+  // Existing content is append-only: no header is retrofitted.
+  const root = makeRepo({ 'src/index.js': 'x\n', '.aiignore': '# mine\npackage-lock.json\n' });
+  applyAiignore(root, ['dist/']);
+  assert.equal(fs.readFileSync(path.join(root, '.aiignore'), 'utf8'), '# mine\npackage-lock.json\ndist/\n');
+});
+
+test('planAiignore: the --dry-run preview is exactly what --fix would write', () => {
+  // The no-drift invariant: the preview and the fix share one
+  // computation, so what the preview lists is byte-for-byte what the
+  // fix writes — including the header a new file gets and the entries
+  // an existing file already has.
+  const root = makeRepo({ 'src/index.js': 'x\n' });
+  const plan = planAiignore(root, ['dist/', 'package-lock.json']);
+  assert.equal(plan.created, true);
+  assert.equal(plan.wouldAddHeader, true);
+  assert.deepEqual(plan.added, ['dist/', 'package-lock.json']);
+  assert.deepEqual(plan.alreadyPresent, []);
+  // The preview writes nothing: no .aiignore appears.
+  assert.equal(fs.existsSync(path.join(root, '.aiignore')), false);
+  const fix = applyAiignore(root, ['dist/', 'package-lock.json']);
+  assert.deepEqual(fix.added, plan.added);
+  assert.equal(fix.created, plan.created);
+  assert.equal(fs.readFileSync(path.join(root, '.aiignore'), 'utf8'), plan.nextContent);
+  // With one entry already present, the preview lists only the new
+  // one and says the file would not be created.
+  const second = planAiignore(root, ['dist/', 'logs/']);
+  assert.equal(second.created, false);
+  assert.equal(second.wouldAddHeader, false);
+  assert.deepEqual(second.added, ['logs/']);
+  assert.deepEqual(second.alreadyPresent, ['dist/']);
+  // With nothing new, the preview is an empty plan and the fix is a
+  // no-op: the file is untouched.
+  const third = planAiignore(root, ['dist/', 'package-lock.json']);
+  assert.deepEqual(third.added, []);
+  assert.equal(third.nextContent, null);
+  const before = fs.readFileSync(path.join(root, '.aiignore'), 'utf8');
+  applyAiignore(root, ['dist/', 'package-lock.json']);
+  assert.equal(fs.readFileSync(path.join(root, '.aiignore'), 'utf8'), before);
+});
+
+test('scanDirectory: noise is ranked by cost and carries per-item tokens', () => {
+  const root = makeRepo({
+    'dist/a.js': 'x'.repeat(1500000),
+    'data/big.bin': 'y'.repeat(2000000),
+    'src/index.js': 'x\n',
+  });
+  const result = scanDirectory(root);
+  assert.equal(result.noise.length, 2);
+  // Biggest first, each with its own token estimate (~4 bytes/token).
+  assert.equal(result.noise[0].label, 'data/big.bin');
+  assert.equal(result.noise[0].tokens, 500000);
+  assert.equal(result.noise[1].label, 'dist/');
+  assert.equal(result.noise[1].tokens, 375000);
 });
 
 test('applyAiignore: appends only the missing entries and keeps the rest', () => {
@@ -242,7 +336,7 @@ test('scanDirectory: files listed in .aiignore are excluded from the scan', () =
   const result = scanDirectory(root);
   assert.equal(result.score, 100);
   assert.equal(result.noise.length, 0);
-  assert.equal(result.files, 2); // src/index.js and .aiignore itself
+  assert.equal(result.files, 1); // only src/index.js: .aiignore itself is the tool's own file, not counted
   assert.deepEqual(result.suggestions, []);
 });
 
@@ -398,4 +492,116 @@ test('scanDirectory: estimatedTokens counts only noise that lost points', () => 
   const result = scanDirectory(root);
   assert.equal(result.noise.length, 1);
   assert.equal(result.estimatedTokens, Math.round(1700000 / 4));
+});
+
+test('topNoiseDirectories: rolls noise up by top-level directory, biggest first', () => {
+  // dust's rollup, applied to the noise list: five 20k-token logs in
+  // logs/ read as five small rows, but logs/ as a group is 100k
+  // tokens — the directory is where the waste lives.
+  const noise = [
+    { label: 'logs/a.log', path: 'logs/a.log', bytes: 80000, tokens: 20000 },
+    { label: 'logs/b.log', path: 'logs/b.log', bytes: 80000, tokens: 20000 },
+    { label: 'data/big.bin', path: 'data/big.bin', bytes: 2000000, tokens: 500000 },
+    { label: 'package-lock.json', path: 'package-lock.json', bytes: 40000, tokens: 10000 },
+  ];
+  const dirs = topNoiseDirectories(noise, 550000);
+  assert.deepEqual(dirs.map((d) => d.directory), ['data/', 'logs/', '(root)']);
+  assert.equal(dirs[0].tokens, 500000);
+  assert.equal(dirs[0].share, 90.9);
+  assert.equal(dirs[1].tokens, 40000);
+  assert.equal(dirs[1].share, 7.3);
+  assert.equal(dirs[2].tokens, 10000);
+  assert.equal(dirs[2].share, 1.8);
+});
+
+test('topNoiseDirectories: caps at three groups and falls back to the label', () => {
+  const noise = [
+    { label: 'a/f', path: 'a/f', bytes: 4000, tokens: 1000 },
+    { label: 'b/f', path: 'b/f', bytes: 3000, tokens: 750 },
+    { label: 'c/f', path: 'c/f', bytes: 2000, tokens: 500 },
+    { label: 'd/f', path: 'd/f', bytes: 1000, tokens: 250 },
+    // No path: the label carries the same repo-relative shape.
+    { label: 'e/f', bytes: 500, tokens: 125 },
+  ];
+  const dirs = topNoiseDirectories(noise, 2625);
+  assert.deepEqual(dirs.map((d) => d.directory), ['a/', 'b/', 'c/']);
+});
+
+test('topNoiseDirectories: a single directory is no rollup at all', () => {
+  // One group would just repeat the file list, so there is nothing
+  // to roll up — the caller prints nothing.
+  const noise = [
+    { label: 'logs/a.log', path: 'logs/a.log', bytes: 80000, tokens: 20000 },
+    { label: 'logs/b.log', path: 'logs/b.log', bytes: 80000, tokens: 20000 },
+  ];
+  assert.deepEqual(topNoiseDirectories(noise, 40000), []);
+  assert.deepEqual(topNoiseDirectories([], 0), []);
+  assert.deepEqual(topNoiseDirectories(noise, null), []);
+});
+
+test('scanDirectory: topDirectories is the same rollup on a real scan', () => {
+  const root = makeRepo({
+    'src/index.js': 'x\n',
+    'logs/a.log': 'x'.repeat(80000),
+    'logs/b.log': 'x'.repeat(80000),
+    'data/big.bin': 'x'.repeat(2 * 1024 * 1024),
+    'package-lock.json': 'x'.repeat(40000),
+  });
+  const result = scanDirectory(root);
+  assert.equal(result.noise.length, 4);
+  assert.deepEqual(result.topDirectories.map((d) => d.directory), ['data/', 'logs/', '(root)']);
+  assert.equal(result.topDirectories[0].tokens, Math.round(2 * 1024 * 1024 / 4));
+});
+
+test('scanDirectory: topDirectories is empty when the noise is one directory', () => {
+  const root = makeRepo({
+    'src/index.js': 'x\n',
+    'data/big.bin': 'x'.repeat(2 * 1024 * 1024),
+  });
+  const result = scanDirectory(root);
+  assert.equal(result.noise.length, 1);
+  assert.deepEqual(result.topDirectories, []);
+});
+
+test('scanDirectory: a changed scope scans only the changed files', () => {
+  const root = makeRepo({
+    'old-debug.log': 'x'.repeat(1200000),
+    'logs/new-debug.log': 'x'.repeat(1200000),
+    'src/app.js': 'x\n',
+  });
+  const result = scanDirectory(root, { changed: { ref: 'HEAD', files: ['logs/new-debug.log'] } });
+  // The committed log is pre-existing noise, not the change: only the
+  // new log is listed, and the totals are the change's (1 file,
+  // 1.2 MB), so the score is the change's score.
+  assert.equal(result.files, 1);
+  assert.equal(result.bytes, 1200000);
+  assert.equal(result.noise.length, 1);
+  assert.equal(result.noise[0].path, 'logs/new-debug.log');
+  assert.deepEqual(result.changed, { ref: 'HEAD', files: ['logs/new-debug.log'] });
+});
+
+test('scanDirectory: a changed scope with no changed files scores clean', () => {
+  const root = makeRepo({
+    'old-debug.log': 'x'.repeat(1200000),
+    'src/app.js': 'x\n',
+  });
+  const result = scanDirectory(root, { changed: { ref: 'HEAD', files: [] } });
+  assert.equal(result.files, 0);
+  assert.equal(result.bytes, 0);
+  assert.equal(result.score, 100);
+  assert.deepEqual(result.noise, []);
+  assert.deepEqual(result.changed, { ref: 'HEAD', files: [] });
+});
+
+test('scanDirectory: a changed file the walk excludes still drops out', () => {
+  const root = makeRepo({
+    '.gitignore': '*.log\n',
+    'ignored.log': 'x'.repeat(1200000),
+  });
+  const result = scanDirectory(root, { changed: { ref: 'HEAD', files: ['ignored.log'] } });
+  // A changed set can name a file the walk excludes — a tracked file
+  // that .gitignore now covers, for example — and the scoped scan
+  // still sees nothing: the walk's exclusions win over the list.
+  assert.equal(result.files, 0);
+  assert.equal(result.score, 100);
 });

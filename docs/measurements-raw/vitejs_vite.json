@@ -1,0 +1,224 @@
+{
+  "command": "all",
+  "root": "/home/hatch/workspace/.scratch/repo-measurements/vitejs_vite",
+  "checks": {
+    "context": {
+      "root": "/home/hatch/workspace/.scratch/repo-measurements/vitejs_vite",
+      "files": 2988,
+      "bytes": 17929451,
+      "truncated": false,
+      "noise": [
+        {
+          "label": "docs/images/ecosystem-vite4.webp",
+          "reason": "large file",
+          "bytes": 1559606,
+          "path": "docs/images/ecosystem-vite4.webp"
+        },
+        {
+          "label": "docs/public/og-image-announcing-vite4.webp",
+          "reason": "large file",
+          "bytes": 1755324,
+          "path": "docs/public/og-image-announcing-vite4.webp"
+        },
+        {
+          "label": "docs/public/og-image-announcing-vite5.webp",
+          "reason": "large file",
+          "bytes": 1347102,
+          "path": "docs/public/og-image-announcing-vite5.webp"
+        },
+        {
+          "label": "packages/vite/src/node/__tests__/optimizer/fixtures/lockfile-hash/yarn-lock/yarn.lock",
+          "reason": "lockfile",
+          "bytes": 11,
+          "path": "packages/vite/src/node/__tests__/optimizer/fixtures/lockfile-hash/yarn-lock/yarn.lock"
+        },
+        {
+          "label": "packages/vite/src/node/__tests__/optimizer/fixtures/lockfile-hash/yarn-state/yarn.lock",
+          "reason": "lockfile",
+          "bytes": 11,
+          "path": "packages/vite/src/node/__tests__/optimizer/fixtures/lockfile-hash/yarn-state/yarn.lock"
+        },
+        {
+          "label": "pnpm-lock.yaml",
+          "reason": "lockfile",
+          "bytes": 481852,
+          "path": "pnpm-lock.yaml"
+        }
+      ],
+      "review": [
+        {
+          "label": "docs/guide/static-deploy-github-pages.yaml",
+          "reason": "deployment script",
+          "bytes": 1673,
+          "path": "docs/guide/static-deploy-github-pages.yaml"
+        },
+        {
+          "label": "docs/guide/static-deploy.md",
+          "reason": "deployment script",
+          "bytes": 14478,
+          "path": "docs/guide/static-deploy.md"
+        },
+        {
+          "label": "packages/vite/src/node/__tests__/env/.env",
+          "reason": "environment-like file",
+          "bytes": 82,
+          "path": "packages/vite/src/node/__tests__/env/.env"
+        },
+        {
+          "label": "packages/vite/src/node/__tests__/env/.env.development",
+          "reason": "environment-like file",
+          "bytes": 45,
+          "path": "packages/vite/src/node/__tests__/env/.env.development"
+        },
+        {
+          "label": "packages/vite/src/node/__tests__/env/.env.development2",
+          "reason": "environment-like file",
+          "bytes": 52,
+          "path": "packages/vite/src/node/__tests__/env/.env.development2"
+        },
+        {
+          "label": "packages/vite/src/node/__tests__/env/.env.existing",
+          "reason": "environment-like file",
+          "bytes": 25,
+          "path": "packages/vite/src/node/__tests__/env/.env.existing"
+        },
+        {
+          "label": "packages/vite/src/node/__tests__/env/.env.production",
+          "reason": "environment-like file",
+          "bytes": 26,
+          "path": "packages/vite/src/node/__tests__/env/.env.production"
+        },
+        {
+          "label": "packages/vite/src/node/__tests__/env/.env.testing",
+          "reason": "environment-like file",
+          "bytes": 20,
+          "path": "packages/vite/src/node/__tests__/env/.env.testing"
+        },
+        {
+          "label": "packages/vite/src/node/server/__tests__/fixtures/watcher/custom-env/.env",
+          "reason": "environment-like file",
+          "bytes": 0,
+          "path": "packages/vite/src/node/server/__tests__/fixtures/watcher/custom-env/.env"
+        },
+        {
+          "label": "playground/assets-sanitize/.env",
+          "reason": "environment-like file",
+          "bytes": 11,
+          "path": "playground/assets-sanitize/.env"
+        },
+        {
+          "label": "playground/env/.env",
+          "reason": "environment-like file",
+          "bytes": 278,
+          "path": "playground/env/.env"
+        },
+        {
+          "label": "playground/env/.env.development",
+          "reason": "environment-like file",
+          "bytes": 47,
+          "path": "playground/env/.env.development"
+        },
+        {
+          "label": "playground/env/.env.production",
+          "reason": "environment-like file",
+          "bytes": 46,
+          "path": "playground/env/.env.production"
+        },
+        {
+          "label": "playground/env-nested/.env",
+          "reason": "environment-like file",
+          "bytes": 28,
+          "path": "playground/env-nested/.env"
+        },
+        {
+          "label": "playground/env-nested/envs/.env.development",
+          "reason": "environment-like file",
+          "bytes": 47,
+          "path": "playground/env-nested/envs/.env.development"
+        },
+        {
+          "label": "playground/env-nested/envs/.env.production",
+          "reason": "environment-like file",
+          "bytes": 46,
+          "path": "playground/env-nested/envs/.env.production"
+        },
+        {
+          "label": "playground/fs-serve/root/src/.env",
+          "reason": "environment-like file",
+          "bytes": 11,
+          "path": "playground/fs-serve/root/src/.env"
+        },
+        {
+          "label": "playground/html/.env",
+          "reason": "environment-like file",
+          "bytes": 42,
+          "path": "playground/html/.env"
+        }
+      ],
+      "suggestions": [
+        "docs/images/ecosystem-vite4.webp",
+        "docs/public/og-image-announcing-vite4.webp",
+        "docs/public/og-image-announcing-vite5.webp",
+        "pnpm-lock.yaml",
+        "yarn.lock"
+      ],
+      "reviewSuggestions": [
+        ".env*"
+      ],
+      "score": 93,
+      "lost": 7,
+      "breakdown": [
+        {
+          "id": "build",
+          "label": "build output",
+          "weight": 40,
+          "bytes": 501,
+          "share": 0,
+          "lost": 0
+        },
+        {
+          "id": "large",
+          "label": "large files",
+          "weight": 25,
+          "bytes": 4662032,
+          "share": 26,
+          "lost": 6.5
+        },
+        {
+          "id": "lockfile",
+          "label": "lockfiles",
+          "weight": 20,
+          "bytes": 481874,
+          "share": 2.7,
+          "lost": 0.5
+        },
+        {
+          "id": "log",
+          "label": "logs",
+          "weight": 15,
+          "bytes": 0,
+          "share": 0,
+          "lost": 0
+        }
+      ],
+      "status": "Looks clean for an AI coding agent",
+      "estimatedTokens": 1285977
+    }
+  },
+  "skipped": [
+    "path — pass --command <name>, for example: dev-diagnosis all --command node",
+    "flakes — pass --flakes <runs-dir>, for example: dev-diagnosis all --flakes examples/runs",
+    "cache — add -- <build-command>, for example: dev-diagnosis all -- node build.mjs"
+  ],
+  "overall": "PASS",
+  "summary": {
+    "checks": {
+      "total": 4,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 3
+    },
+    "contextNoiseBytes": 5143906,
+    "cacheSavedPct": null
+  }
+}

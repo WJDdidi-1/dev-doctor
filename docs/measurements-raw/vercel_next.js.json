@@ -1,0 +1,302 @@
+{
+  "command": "all",
+  "root": "/home/hatch/workspace/.scratch/repo-measurements/vercel_next.js",
+  "checks": {
+    "context": {
+      "root": "/home/hatch/workspace/.scratch/repo-measurements/vercel_next.js",
+      "files": 10000,
+      "bytes": 98266623,
+      "truncated": true,
+      "noise": [
+        {
+          "label": ".github/actions/needs-triage/dist/",
+          "reason": "generated build output",
+          "bytes": 926333,
+          "path": ".github/actions/needs-triage/dist/"
+        },
+        {
+          "label": ".github/actions/next-integration-stat/dist/",
+          "reason": "generated build output",
+          "bytes": 1166463,
+          "path": ".github/actions/next-integration-stat/dist/"
+        },
+        {
+          "label": ".github/actions/pr-auto-label/dist/",
+          "reason": "generated build output",
+          "bytes": 669169,
+          "path": ".github/actions/pr-auto-label/dist/"
+        },
+        {
+          "label": ".github/actions/pr-stack-ci-gate/dist/",
+          "reason": "generated build output",
+          "bytes": 639519,
+          "path": ".github/actions/pr-stack-ci-gate/dist/"
+        },
+        {
+          "label": ".github/actions/validate-docs-links/dist/",
+          "reason": "generated build output",
+          "bytes": 1433952,
+          "path": ".github/actions/validate-docs-links/dist/"
+        },
+        {
+          "label": "examples/with-stripe-typescript/public/checkout_demo.gif",
+          "reason": "large file",
+          "bytes": 1616108,
+          "path": "examples/with-stripe-typescript/public/checkout_demo.gif"
+        },
+        {
+          "label": "examples/with-stripe-typescript/public/elements_demo.gif",
+          "reason": "large file",
+          "bytes": 1508972,
+          "path": "examples/with-stripe-typescript/public/elements_demo.gif"
+        },
+        {
+          "label": "examples/with-xata/public/xatafly.gif",
+          "reason": "large file",
+          "bytes": 2698486,
+          "path": "examples/with-xata/public/xatafly.gif"
+        },
+        {
+          "label": "packages/next/src/build/",
+          "reason": "generated build output",
+          "bytes": 2221999,
+          "path": "packages/next/src/build/"
+        },
+        {
+          "label": "packages/next/src/compiled/@vercel/og/resvg.wasm",
+          "reason": "large file",
+          "bytes": 1378357,
+          "path": "packages/next/src/compiled/@vercel/og/resvg.wasm"
+        },
+        {
+          "label": "packages/next/src/compiled/babel/bundle.js",
+          "reason": "large file",
+          "bytes": 1364747,
+          "path": "packages/next/src/compiled/babel/bundle.js"
+        },
+        {
+          "label": "packages/next/src/compiled/babel-packages/packages-bundle.js",
+          "reason": "large file",
+          "bytes": 1540090,
+          "path": "packages/next/src/compiled/babel-packages/packages-bundle.js"
+        },
+        {
+          "label": "packages/next/src/compiled/react-dom/cjs/react-dom-client.development.js",
+          "reason": "large file",
+          "bytes": 1185106,
+          "path": "packages/next/src/compiled/react-dom/cjs/react-dom-client.development.js"
+        },
+        {
+          "label": "packages/next/src/compiled/react-dom/cjs/react-dom-profiling.development.js",
+          "reason": "large file",
+          "bytes": 1202238,
+          "path": "packages/next/src/compiled/react-dom/cjs/react-dom-profiling.development.js"
+        },
+        {
+          "label": "packages/next/src/compiled/react-dom-experimental/cjs/react-dom-client.development.js",
+          "reason": "large file",
+          "bytes": 1281193,
+          "path": "packages/next/src/compiled/react-dom-experimental/cjs/react-dom-client.development.js"
+        },
+        {
+          "label": "packages/next/src/compiled/react-dom-experimental/cjs/react-dom-profiling.development.js",
+          "reason": "large file",
+          "bytes": 1298260,
+          "path": "packages/next/src/compiled/react-dom-experimental/cjs/react-dom-profiling.development.js"
+        },
+        {
+          "label": "packages/next/src/compiled/react-dom-experimental/cjs/react-dom-unstable_testing.development.js",
+          "reason": "large file",
+          "bytes": 1297738,
+          "path": "packages/next/src/compiled/react-dom-experimental/cjs/react-dom-unstable_testing.development.js"
+        },
+        {
+          "label": "packages/next/src/compiled/webpack/bundle5.js",
+          "reason": "large file",
+          "bytes": 2582597,
+          "path": "packages/next/src/compiled/webpack/bundle5.js"
+        },
+        {
+          "label": "packages/next/src/next-devtools/dev-overlay/app.png",
+          "reason": "large file",
+          "bytes": 3438585,
+          "path": "packages/next/src/next-devtools/dev-overlay/app.png"
+        }
+      ],
+      "review": [
+        {
+          "label": ".agents/skills/deploy-release-test/SKILL.md",
+          "reason": "deployment script",
+          "bytes": 4962,
+          "path": ".agents/skills/deploy-release-test/SKILL.md"
+        },
+        {
+          "label": ".agents/skills/deploy-release-test/agents/openai.yaml",
+          "reason": "deployment script",
+          "bytes": 253,
+          "path": ".agents/skills/deploy-release-test/agents/openai.yaml"
+        },
+        {
+          "label": ".github/workflows/build_and_deploy.yml",
+          "reason": "deployment script",
+          "bytes": 32497,
+          "path": ".github/workflows/build_and_deploy.yml"
+        },
+        {
+          "label": ".github/workflows/retry_deploy_test.yml",
+          "reason": "deployment script",
+          "bytes": 2382,
+          "path": ".github/workflows/retry_deploy_test.yml"
+        },
+        {
+          "label": ".github/workflows/test_e2e_deploy_release.yml",
+          "reason": "deployment script",
+          "bytes": 14351,
+          "path": ".github/workflows/test_e2e_deploy_release.yml"
+        },
+        {
+          "label": "bench/basic-app/app/ui/deploy-actions.js",
+          "reason": "deployment script",
+          "bytes": 951,
+          "path": "bench/basic-app/app/ui/deploy-actions.js"
+        },
+        {
+          "label": "docs/01-app/01-getting-started/17-deploying.mdx",
+          "reason": "deployment script",
+          "bytes": 6594,
+          "path": "docs/01-app/01-getting-started/17-deploying.mdx"
+        },
+        {
+          "label": "docs/01-app/02-guides/deploying-to-platforms.mdx",
+          "reason": "deployment script",
+          "bytes": 9766,
+          "path": "docs/01-app/02-guides/deploying-to-platforms.mdx"
+        },
+        {
+          "label": "docs/01-app/03-api-reference/05-config/01-next-config-js/deploymentId.mdx",
+          "reason": "deployment script",
+          "bytes": 4434,
+          "path": "docs/01-app/03-api-reference/05-config/01-next-config-js/deploymentId.mdx"
+        },
+        {
+          "label": "docs/02-pages/01-getting-started/11-deploying.mdx",
+          "reason": "deployment script",
+          "bytes": 172,
+          "path": "docs/02-pages/01-getting-started/11-deploying.mdx"
+        },
+        {
+          "label": "docs/02-pages/04-api-reference/04-config/01-next-config-js/deploymentId.mdx",
+          "reason": "deployment script",
+          "bytes": 517,
+          "path": "docs/02-pages/04-api-reference/04-config/01-next-config-js/deploymentId.mdx"
+        },
+        {
+          "label": "errors/deploymentid-invalid-characters.mdx",
+          "reason": "deployment script",
+          "bytes": 1911,
+          "path": "errors/deploymentid-invalid-characters.mdx"
+        },
+        {
+          "label": "errors/deploymentid-not-a-string.mdx",
+          "reason": "deployment script",
+          "bytes": 664,
+          "path": "errors/deploymentid-not-a-string.mdx"
+        },
+        {
+          "label": "examples/eve/.env.example",
+          "reason": "environment template (usually safe to share)",
+          "bytes": 20,
+          "path": "examples/eve/.env.example"
+        },
+        {
+          "label": "examples/with-supabase/components/deploy-button.tsx",
+          "reason": "deployment script",
+          "bytes": 1321,
+          "path": "examples/with-supabase/components/deploy-button.tsx"
+        },
+        {
+          "label": "packages/next/src/client/register-deployment-id-global.ts",
+          "reason": "deployment script",
+          "bytes": 157,
+          "path": "packages/next/src/client/register-deployment-id-global.ts"
+        }
+      ],
+      "suggestions": [
+        ".github/actions/needs-triage/dist/",
+        ".github/actions/next-integration-stat/dist/",
+        ".github/actions/pr-auto-label/dist/",
+        ".github/actions/pr-stack-ci-gate/dist/",
+        ".github/actions/validate-docs-links/dist/",
+        "examples/with-stripe-typescript/public/checkout_demo.gif",
+        "examples/with-stripe-typescript/public/elements_demo.gif",
+        "examples/with-xata/public/xatafly.gif",
+        "packages/next/src/build/",
+        "packages/next/src/compiled/@vercel/og/resvg.wasm",
+        "packages/next/src/compiled/babel-packages/packages-bundle.js",
+        "packages/next/src/compiled/babel/bundle.js",
+        "packages/next/src/compiled/react-dom-experimental/cjs/react-dom-client.development.js",
+        "packages/next/src/compiled/react-dom-experimental/cjs/react-dom-profiling.development.js",
+        "packages/next/src/compiled/react-dom-experimental/cjs/react-dom-unstable_testing.development.js",
+        "packages/next/src/compiled/react-dom/cjs/react-dom-client.development.js",
+        "packages/next/src/compiled/react-dom/cjs/react-dom-profiling.development.js",
+        "packages/next/src/compiled/webpack/bundle5.js",
+        "packages/next/src/next-devtools/dev-overlay/app.png"
+      ],
+      "reviewSuggestions": [],
+      "score": 91,
+      "lost": 8.6,
+      "breakdown": [
+        {
+          "id": "build",
+          "label": "build output",
+          "weight": 40,
+          "bytes": 7057435,
+          "share": 7.2,
+          "lost": 2.9
+        },
+        {
+          "id": "large",
+          "label": "large files",
+          "weight": 25,
+          "bytes": 22392477,
+          "share": 22.8,
+          "lost": 5.7
+        },
+        {
+          "id": "lockfile",
+          "label": "lockfiles",
+          "weight": 20,
+          "bytes": 184246,
+          "share": 0.2,
+          "lost": 0
+        },
+        {
+          "id": "log",
+          "label": "logs",
+          "weight": 15,
+          "bytes": 0,
+          "share": 0,
+          "lost": 0
+        }
+      ],
+      "status": "Looks clean for an AI coding agent",
+      "estimatedTokens": 7362478
+    }
+  },
+  "skipped": [
+    "path — pass --command <name>, for example: dev-diagnosis all --command node",
+    "flakes — pass --flakes <runs-dir>, for example: dev-diagnosis all --flakes examples/runs",
+    "cache — add -- <build-command>, for example: dev-diagnosis all -- node build.mjs"
+  ],
+  "overall": "PASS",
+  "summary": {
+    "checks": {
+      "total": 4,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 3
+    },
+    "contextNoiseBytes": 29449912,
+    "cacheSavedPct": null
+  }
+}

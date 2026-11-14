@@ -1,0 +1,5 @@
+repo_dir=/home/hatch/workspace/.scratch/repo-measurements/denoland_deno
+exit_code=0
+wall_seconds=5
+json_bytes=13147
+--- stderr tail ---

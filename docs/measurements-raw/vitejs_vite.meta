@@ -1,0 +1,5 @@
+repo_dir=/home/hatch/workspace/.scratch/repo-measurements/vitejs_vite
+exit_code=0
+wall_seconds=2
+json_bytes=7120
+--- stderr tail ---

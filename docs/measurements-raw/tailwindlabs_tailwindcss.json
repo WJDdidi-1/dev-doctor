@@ -1,0 +1,86 @@
+{
+  "command": "all",
+  "root": "/home/hatch/workspace/.scratch/repo-measurements/tailwindlabs_tailwindcss",
+  "checks": {
+    "context": {
+      "root": "/home/hatch/workspace/.scratch/repo-measurements/tailwindlabs_tailwindcss",
+      "files": 565,
+      "bytes": 6044715,
+      "truncated": false,
+      "noise": [
+        {
+          "label": "packages/@tailwindcss-cli/src/commands/build/",
+          "reason": "generated build output",
+          "bytes": 28234,
+          "path": "packages/@tailwindcss-cli/src/commands/build/"
+        },
+        {
+          "label": "pnpm-lock.yaml",
+          "reason": "lockfile",
+          "bytes": 195542,
+          "path": "pnpm-lock.yaml"
+        }
+      ],
+      "review": [],
+      "suggestions": [
+        "packages/@tailwindcss-cli/src/commands/build/",
+        "pnpm-lock.yaml"
+      ],
+      "reviewSuggestions": [],
+      "score": 99,
+      "lost": 0.8,
+      "breakdown": [
+        {
+          "id": "build",
+          "label": "build output",
+          "weight": 40,
+          "bytes": 28234,
+          "share": 0.5,
+          "lost": 0.2
+        },
+        {
+          "id": "large",
+          "label": "large files",
+          "weight": 25,
+          "bytes": 0,
+          "share": 0,
+          "lost": 0
+        },
+        {
+          "id": "lockfile",
+          "label": "lockfiles",
+          "weight": 20,
+          "bytes": 195542,
+          "share": 3.2,
+          "lost": 0.6
+        },
+        {
+          "id": "log",
+          "label": "logs",
+          "weight": 15,
+          "bytes": 0,
+          "share": 0,
+          "lost": 0
+        }
+      ],
+      "status": "Looks clean for an AI coding agent",
+      "estimatedTokens": 55944
+    }
+  },
+  "skipped": [
+    "path — pass --command <name>, for example: dev-diagnosis all --command node",
+    "flakes — pass --flakes <runs-dir>, for example: dev-diagnosis all --flakes examples/runs",
+    "cache — add -- <build-command>, for example: dev-diagnosis all -- node build.mjs"
+  ],
+  "overall": "PASS",
+  "summary": {
+    "checks": {
+      "total": 4,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 3
+    },
+    "contextNoiseBytes": 223776,
+    "cacheSavedPct": null
+  }
+}

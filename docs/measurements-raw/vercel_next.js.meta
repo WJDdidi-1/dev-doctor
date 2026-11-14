@@ -1,0 +1,5 @@
+repo_dir=/home/hatch/workspace/.scratch/repo-measurements/vercel_next.js
+exit_code=0
+wall_seconds=12
+json_bytes=11172
+--- stderr tail ---

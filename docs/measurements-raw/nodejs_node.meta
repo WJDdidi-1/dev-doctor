@@ -1,0 +1,5 @@
+repo_dir=/home/hatch/workspace/.scratch/repo-measurements/nodejs_node
+exit_code=0
+wall_seconds=3
+json_bytes=26362
+--- stderr tail ---

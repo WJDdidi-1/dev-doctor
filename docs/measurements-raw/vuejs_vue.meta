@@ -1,0 +1,5 @@
+repo_dir=/home/hatch/workspace/.scratch/repo-measurements/vuejs_vue
+exit_code=0
+wall_seconds=4
+json_bytes=1884
+--- stderr tail ---

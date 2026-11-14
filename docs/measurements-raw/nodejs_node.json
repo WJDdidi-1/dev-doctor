@@ -1,0 +1,629 @@
+{
+  "command": "all",
+  "root": "/home/hatch/workspace/.scratch/repo-measurements/nodejs_node",
+  "checks": {
+    "context": {
+      "root": "/home/hatch/workspace/.scratch/repo-measurements/nodejs_node",
+      "files": 10000,
+      "bytes": 297088008,
+      "truncated": true,
+      "noise": [
+        {
+          "label": "deps/acorn/acorn/dist/",
+          "reason": "generated build output",
+          "bytes": 529554,
+          "path": "deps/acorn/acorn/dist/"
+        },
+        {
+          "label": "deps/acorn/acorn-walk/dist/",
+          "reason": "generated build output",
+          "bytes": 43212,
+          "path": "deps/acorn/acorn-walk/dist/"
+        },
+        {
+          "label": "deps/amaro/dist/",
+          "reason": "generated build output",
+          "bytes": 3036842,
+          "path": "deps/amaro/dist/"
+        },
+        {
+          "label": "deps/amaro/lib/wasm.js",
+          "reason": "large file",
+          "bytes": 3011132,
+          "path": "deps/amaro/lib/wasm.js"
+        },
+        {
+          "label": "deps/corepack/dist/",
+          "reason": "generated build output",
+          "bytes": 531305,
+          "path": "deps/corepack/dist/"
+        },
+        {
+          "label": "deps/icu-small/source/data/in/icudt78l.dat.bz2",
+          "reason": "large file",
+          "bytes": 11344770,
+          "path": "deps/icu-small/source/data/in/icudt78l.dat.bz2"
+        },
+        {
+          "label": "deps/openssl/config/archs/BSD-x86/asm/configdata.pm",
+          "reason": "large file",
+          "bytes": 1081545,
+          "path": "deps/openssl/config/archs/BSD-x86/asm/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/BSD-x86/asm_avx2/configdata.pm",
+          "reason": "large file",
+          "bytes": 1081581,
+          "path": "deps/openssl/config/archs/BSD-x86/asm_avx2/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/BSD-x86/no-asm/configdata.pm",
+          "reason": "large file",
+          "bytes": 1075645,
+          "path": "deps/openssl/config/archs/BSD-x86/no-asm/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/BSD-x86_64/asm/configdata.pm",
+          "reason": "large file",
+          "bytes": 1094342,
+          "path": "deps/openssl/config/archs/BSD-x86_64/asm/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/BSD-x86_64/asm/crypto/modes/aes-gcm-avx512.s",
+          "reason": "large file",
+          "bytes": 3413141,
+          "path": "deps/openssl/config/archs/BSD-x86_64/asm/crypto/modes/aes-gcm-avx512.s"
+        },
+        {
+          "label": "deps/openssl/config/archs/BSD-x86_64/asm_avx2/configdata.pm",
+          "reason": "large file",
+          "bytes": 1094378,
+          "path": "deps/openssl/config/archs/BSD-x86_64/asm_avx2/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/BSD-x86_64/no-asm/configdata.pm",
+          "reason": "large file",
+          "bytes": 1075660,
+          "path": "deps/openssl/config/archs/BSD-x86_64/no-asm/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/VC-WIN32/asm/configdata.pm",
+          "reason": "large file",
+          "bytes": 1083901,
+          "path": "deps/openssl/config/archs/VC-WIN32/asm/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/VC-WIN32/asm_avx2/configdata.pm",
+          "reason": "large file",
+          "bytes": 1083937,
+          "path": "deps/openssl/config/archs/VC-WIN32/asm_avx2/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/VC-WIN32/no-asm/configdata.pm",
+          "reason": "large file",
+          "bytes": 1078001,
+          "path": "deps/openssl/config/archs/VC-WIN32/no-asm/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/VC-WIN64-ARM/no-asm/configdata.pm",
+          "reason": "large file",
+          "bytes": 1077845,
+          "path": "deps/openssl/config/archs/VC-WIN64-ARM/no-asm/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/VC-WIN64A/asm/configdata.pm",
+          "reason": "large file",
+          "bytes": 1096468,
+          "path": "deps/openssl/config/archs/VC-WIN64A/asm/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/VC-WIN64A/asm/crypto/modes/aes-gcm-avx512.asm",
+          "reason": "large file",
+          "bytes": 3267244,
+          "path": "deps/openssl/config/archs/VC-WIN64A/asm/crypto/modes/aes-gcm-avx512.asm"
+        },
+        {
+          "label": "deps/openssl/config/archs/VC-WIN64A/asm_avx2/configdata.pm",
+          "reason": "large file",
+          "bytes": 1096504,
+          "path": "deps/openssl/config/archs/VC-WIN64A/asm_avx2/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/VC-WIN64A/asm_avx2/crypto/modes/aes-gcm-avx512.asm",
+          "reason": "large file",
+          "bytes": 3267244,
+          "path": "deps/openssl/config/archs/VC-WIN64A/asm_avx2/crypto/modes/aes-gcm-avx512.asm"
+        },
+        {
+          "label": "deps/openssl/config/archs/VC-WIN64A/no-asm/configdata.pm",
+          "reason": "large file",
+          "bytes": 1078090,
+          "path": "deps/openssl/config/archs/VC-WIN64A/no-asm/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/aix64-gcc-as/asm/configdata.pm",
+          "reason": "large file",
+          "bytes": 1085214,
+          "path": "deps/openssl/config/archs/aix64-gcc-as/asm/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/aix64-gcc-as/asm_avx2/configdata.pm",
+          "reason": "large file",
+          "bytes": 1085250,
+          "path": "deps/openssl/config/archs/aix64-gcc-as/asm_avx2/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/aix64-gcc-as/no-asm/configdata.pm",
+          "reason": "large file",
+          "bytes": 1075768,
+          "path": "deps/openssl/config/archs/aix64-gcc-as/no-asm/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/darwin64-arm64-cc/asm/configdata.pm",
+          "reason": "large file",
+          "bytes": 1090202,
+          "path": "deps/openssl/config/archs/darwin64-arm64-cc/asm/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/darwin64-arm64-cc/asm_avx2/configdata.pm",
+          "reason": "large file",
+          "bytes": 1090238,
+          "path": "deps/openssl/config/archs/darwin64-arm64-cc/asm_avx2/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/darwin64-arm64-cc/no-asm/configdata.pm",
+          "reason": "large file",
+          "bytes": 1074956,
+          "path": "deps/openssl/config/archs/darwin64-arm64-cc/no-asm/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/darwin64-x86_64-cc/asm/configdata.pm",
+          "reason": "large file",
+          "bytes": 1093641,
+          "path": "deps/openssl/config/archs/darwin64-x86_64-cc/asm/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/darwin64-x86_64-cc/asm/crypto/modes/aes-gcm-avx512.s",
+          "reason": "large file",
+          "bytes": 3409569,
+          "path": "deps/openssl/config/archs/darwin64-x86_64-cc/asm/crypto/modes/aes-gcm-avx512.s"
+        },
+        {
+          "label": "deps/openssl/config/archs/darwin64-x86_64-cc/asm_avx2/configdata.pm",
+          "reason": "large file",
+          "bytes": 1093677,
+          "path": "deps/openssl/config/archs/darwin64-x86_64-cc/asm_avx2/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/darwin64-x86_64-cc/no-asm/configdata.pm",
+          "reason": "large file",
+          "bytes": 1074959,
+          "path": "deps/openssl/config/archs/darwin64-x86_64-cc/no-asm/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/linux-aarch64/asm/configdata.pm",
+          "reason": "large file",
+          "bytes": 1091069,
+          "path": "deps/openssl/config/archs/linux-aarch64/asm/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/linux-aarch64/asm_avx2/configdata.pm",
+          "reason": "large file",
+          "bytes": 1091105,
+          "path": "deps/openssl/config/archs/linux-aarch64/asm_avx2/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/linux-aarch64/no-asm/configdata.pm",
+          "reason": "large file",
+          "bytes": 1075816,
+          "path": "deps/openssl/config/archs/linux-aarch64/no-asm/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/linux-armv4/asm/configdata.pm",
+          "reason": "large file",
+          "bytes": 1084792,
+          "path": "deps/openssl/config/archs/linux-armv4/asm/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/linux-armv4/asm_avx2/configdata.pm",
+          "reason": "large file",
+          "bytes": 1084828,
+          "path": "deps/openssl/config/archs/linux-armv4/asm_avx2/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/linux-armv4/no-asm/configdata.pm",
+          "reason": "large file",
+          "bytes": 1075808,
+          "path": "deps/openssl/config/archs/linux-armv4/no-asm/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/linux-elf/asm/configdata.pm",
+          "reason": "large file",
+          "bytes": 1081691,
+          "path": "deps/openssl/config/archs/linux-elf/asm/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/linux-elf/asm_avx2/configdata.pm",
+          "reason": "large file",
+          "bytes": 1081727,
+          "path": "deps/openssl/config/archs/linux-elf/asm_avx2/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/linux-elf/no-asm/configdata.pm",
+          "reason": "large file",
+          "bytes": 1075792,
+          "path": "deps/openssl/config/archs/linux-elf/no-asm/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/linux-ppc64le/asm/configdata.pm",
+          "reason": "large file",
+          "bytes": 1088650,
+          "path": "deps/openssl/config/archs/linux-ppc64le/asm/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/linux-ppc64le/asm_avx2/configdata.pm",
+          "reason": "large file",
+          "bytes": 1088686,
+          "path": "deps/openssl/config/archs/linux-ppc64le/asm_avx2/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/linux-ppc64le/no-asm/configdata.pm",
+          "reason": "large file",
+          "bytes": 1075836,
+          "path": "deps/openssl/config/archs/linux-ppc64le/no-asm/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/linux-x86_64/asm/configdata.pm",
+          "reason": "large file",
+          "bytes": 1094524,
+          "path": "deps/openssl/config/archs/linux-x86_64/asm/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/linux-x86_64/asm/crypto/modes/aes-gcm-avx512.s",
+          "reason": "large file",
+          "bytes": 3413141,
+          "path": "deps/openssl/config/archs/linux-x86_64/asm/crypto/modes/aes-gcm-avx512.s"
+        },
+        {
+          "label": "deps/openssl/config/archs/linux-x86_64/asm_avx2/configdata.pm",
+          "reason": "large file",
+          "bytes": 1094560,
+          "path": "deps/openssl/config/archs/linux-x86_64/asm_avx2/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/linux-x86_64/no-asm/configdata.pm",
+          "reason": "large file",
+          "bytes": 1075843,
+          "path": "deps/openssl/config/archs/linux-x86_64/no-asm/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/linux32-s390x/asm/configdata.pm",
+          "reason": "large file",
+          "bytes": 1082142,
+          "path": "deps/openssl/config/archs/linux32-s390x/asm/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/linux32-s390x/asm_avx2/configdata.pm",
+          "reason": "large file",
+          "bytes": 1082178,
+          "path": "deps/openssl/config/archs/linux32-s390x/asm_avx2/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/linux32-s390x/no-asm/configdata.pm",
+          "reason": "large file",
+          "bytes": 1075834,
+          "path": "deps/openssl/config/archs/linux32-s390x/no-asm/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/linux64-loongarch64/no-asm/configdata.pm",
+          "reason": "large file",
+          "bytes": 1075842,
+          "path": "deps/openssl/config/archs/linux64-loongarch64/no-asm/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/linux64-mips64/asm/configdata.pm",
+          "reason": "large file",
+          "bytes": 1079412,
+          "path": "deps/openssl/config/archs/linux64-mips64/asm/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/linux64-mips64/asm_avx2/configdata.pm",
+          "reason": "large file",
+          "bytes": 1079448,
+          "path": "deps/openssl/config/archs/linux64-mips64/asm_avx2/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/linux64-mips64/no-asm/configdata.pm",
+          "reason": "large file",
+          "bytes": 1075854,
+          "path": "deps/openssl/config/archs/linux64-mips64/no-asm/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/linux64-riscv64/asm/configdata.pm",
+          "reason": "large file",
+          "bytes": 1089104,
+          "path": "deps/openssl/config/archs/linux64-riscv64/asm/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/linux64-riscv64/asm_avx2/configdata.pm",
+          "reason": "large file",
+          "bytes": 1089140,
+          "path": "deps/openssl/config/archs/linux64-riscv64/asm_avx2/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/linux64-riscv64/no-asm/configdata.pm",
+          "reason": "large file",
+          "bytes": 1075820,
+          "path": "deps/openssl/config/archs/linux64-riscv64/no-asm/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/linux64-s390x/asm/configdata.pm",
+          "reason": "large file",
+          "bytes": 1083869,
+          "path": "deps/openssl/config/archs/linux64-s390x/asm/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/linux64-s390x/asm_avx2/configdata.pm",
+          "reason": "large file",
+          "bytes": 1083905,
+          "path": "deps/openssl/config/archs/linux64-s390x/asm_avx2/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/linux64-s390x/no-asm/configdata.pm",
+          "reason": "large file",
+          "bytes": 1076351,
+          "path": "deps/openssl/config/archs/linux64-s390x/no-asm/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/solaris-x86-gcc/asm/configdata.pm",
+          "reason": "large file",
+          "bytes": 1081635,
+          "path": "deps/openssl/config/archs/solaris-x86-gcc/asm/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/solaris-x86-gcc/asm_avx2/configdata.pm",
+          "reason": "large file",
+          "bytes": 1081671,
+          "path": "deps/openssl/config/archs/solaris-x86-gcc/asm_avx2/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/solaris-x86-gcc/no-asm/configdata.pm",
+          "reason": "large file",
+          "bytes": 1075736,
+          "path": "deps/openssl/config/archs/solaris-x86-gcc/no-asm/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/solaris64-x86_64-gcc/asm/configdata.pm",
+          "reason": "large file",
+          "bytes": 1094428,
+          "path": "deps/openssl/config/archs/solaris64-x86_64-gcc/asm/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/solaris64-x86_64-gcc/asm/crypto/modes/aes-gcm-avx512.s",
+          "reason": "large file",
+          "bytes": 3413141,
+          "path": "deps/openssl/config/archs/solaris64-x86_64-gcc/asm/crypto/modes/aes-gcm-avx512.s"
+        },
+        {
+          "label": "deps/openssl/config/archs/solaris64-x86_64-gcc/asm_avx2/configdata.pm",
+          "reason": "large file",
+          "bytes": 1094464,
+          "path": "deps/openssl/config/archs/solaris64-x86_64-gcc/asm_avx2/configdata.pm"
+        },
+        {
+          "label": "deps/openssl/config/archs/solaris64-x86_64-gcc/no-asm/configdata.pm",
+          "reason": "large file",
+          "bytes": 1075747,
+          "path": "deps/openssl/config/archs/solaris64-x86_64-gcc/no-asm/configdata.pm"
+        }
+      ],
+      "review": [
+        {
+          "label": "benchmark/fixtures/valid.env",
+          "reason": "environment-like file",
+          "bytes": 2138,
+          "path": "benchmark/fixtures/valid.env"
+        },
+        {
+          "label": "deps/inspector_protocol/lib/Forward_h.template",
+          "reason": "environment template (usually safe to share)",
+          "bytes": 2548,
+          "path": "deps/inspector_protocol/lib/Forward_h.template"
+        },
+        {
+          "label": "deps/inspector_protocol/lib/Object_cpp.template",
+          "reason": "environment template (usually safe to share)",
+          "bytes": 1369,
+          "path": "deps/inspector_protocol/lib/Object_cpp.template"
+        },
+        {
+          "label": "deps/inspector_protocol/lib/Object_h.template",
+          "reason": "environment template (usually safe to share)",
+          "bytes": 1343,
+          "path": "deps/inspector_protocol/lib/Object_h.template"
+        },
+        {
+          "label": "deps/inspector_protocol/lib/Protocol_cpp.template",
+          "reason": "environment template (usually safe to share)",
+          "bytes": 339,
+          "path": "deps/inspector_protocol/lib/Protocol_cpp.template"
+        },
+        {
+          "label": "deps/inspector_protocol/lib/ValueConversions_cpp.template",
+          "reason": "environment template (usually safe to share)",
+          "bytes": 4291,
+          "path": "deps/inspector_protocol/lib/ValueConversions_cpp.template"
+        },
+        {
+          "label": "deps/inspector_protocol/lib/ValueConversions_h.template",
+          "reason": "environment template (usually safe to share)",
+          "bytes": 10279,
+          "path": "deps/inspector_protocol/lib/ValueConversions_h.template"
+        },
+        {
+          "label": "deps/inspector_protocol/lib/Values_cpp.template",
+          "reason": "environment template (usually safe to share)",
+          "bytes": 15068,
+          "path": "deps/inspector_protocol/lib/Values_cpp.template"
+        },
+        {
+          "label": "deps/inspector_protocol/lib/Values_h.template",
+          "reason": "environment template (usually safe to share)",
+          "bytes": 8148,
+          "path": "deps/inspector_protocol/lib/Values_h.template"
+        },
+        {
+          "label": "deps/inspector_protocol/templates/Exported_h.template",
+          "reason": "environment template (usually safe to share)",
+          "bytes": 2637,
+          "path": "deps/inspector_protocol/templates/Exported_h.template"
+        },
+        {
+          "label": "deps/inspector_protocol/templates/Imported_h.template",
+          "reason": "environment template (usually safe to share)",
+          "bytes": 4584,
+          "path": "deps/inspector_protocol/templates/Imported_h.template"
+        },
+        {
+          "label": "deps/inspector_protocol/templates/TypeBuilder_cpp.template",
+          "reason": "environment template (usually safe to share)",
+          "bytes": 14871,
+          "path": "deps/inspector_protocol/templates/TypeBuilder_cpp.template"
+        },
+        {
+          "label": "deps/inspector_protocol/templates/TypeBuilder_h.template",
+          "reason": "environment template (usually safe to share)",
+          "bytes": 12856,
+          "path": "deps/inspector_protocol/templates/TypeBuilder_h.template"
+        }
+      ],
+      "suggestions": [
+        "deps/acorn/acorn-walk/dist/",
+        "deps/acorn/acorn/dist/",
+        "deps/amaro/dist/",
+        "deps/amaro/lib/wasm.js",
+        "deps/corepack/dist/",
+        "deps/icu-small/source/data/in/icudt78l.dat.bz2",
+        "deps/openssl/config/archs/BSD-x86/asm/configdata.pm",
+        "deps/openssl/config/archs/BSD-x86/asm_avx2/configdata.pm",
+        "deps/openssl/config/archs/BSD-x86/no-asm/configdata.pm",
+        "deps/openssl/config/archs/BSD-x86_64/asm/configdata.pm",
+        "deps/openssl/config/archs/BSD-x86_64/asm/crypto/modes/aes-gcm-avx512.s",
+        "deps/openssl/config/archs/BSD-x86_64/asm_avx2/configdata.pm",
+        "deps/openssl/config/archs/BSD-x86_64/no-asm/configdata.pm",
+        "deps/openssl/config/archs/VC-WIN32/asm/configdata.pm",
+        "deps/openssl/config/archs/VC-WIN32/asm_avx2/configdata.pm",
+        "deps/openssl/config/archs/VC-WIN32/no-asm/configdata.pm",
+        "deps/openssl/config/archs/VC-WIN64-ARM/no-asm/configdata.pm",
+        "deps/openssl/config/archs/VC-WIN64A/asm/configdata.pm",
+        "deps/openssl/config/archs/VC-WIN64A/asm/crypto/modes/aes-gcm-avx512.asm",
+        "deps/openssl/config/archs/VC-WIN64A/asm_avx2/configdata.pm",
+        "deps/openssl/config/archs/VC-WIN64A/asm_avx2/crypto/modes/aes-gcm-avx512.asm",
+        "deps/openssl/config/archs/VC-WIN64A/no-asm/configdata.pm",
+        "deps/openssl/config/archs/aix64-gcc-as/asm/configdata.pm",
+        "deps/openssl/config/archs/aix64-gcc-as/asm_avx2/configdata.pm",
+        "deps/openssl/config/archs/aix64-gcc-as/no-asm/configdata.pm",
+        "deps/openssl/config/archs/darwin64-arm64-cc/asm/configdata.pm",
+        "deps/openssl/config/archs/darwin64-arm64-cc/asm_avx2/configdata.pm",
+        "deps/openssl/config/archs/darwin64-arm64-cc/no-asm/configdata.pm",
+        "deps/openssl/config/archs/darwin64-x86_64-cc/asm/configdata.pm",
+        "deps/openssl/config/archs/darwin64-x86_64-cc/asm/crypto/modes/aes-gcm-avx512.s",
+        "deps/openssl/config/archs/darwin64-x86_64-cc/asm_avx2/configdata.pm",
+        "deps/openssl/config/archs/darwin64-x86_64-cc/no-asm/configdata.pm",
+        "deps/openssl/config/archs/linux-aarch64/asm/configdata.pm",
+        "deps/openssl/config/archs/linux-aarch64/asm_avx2/configdata.pm",
+        "deps/openssl/config/archs/linux-aarch64/no-asm/configdata.pm",
+        "deps/openssl/config/archs/linux-armv4/asm/configdata.pm",
+        "deps/openssl/config/archs/linux-armv4/asm_avx2/configdata.pm",
+        "deps/openssl/config/archs/linux-armv4/no-asm/configdata.pm",
+        "deps/openssl/config/archs/linux-elf/asm/configdata.pm",
+        "deps/openssl/config/archs/linux-elf/asm_avx2/configdata.pm",
+        "deps/openssl/config/archs/linux-elf/no-asm/configdata.pm",
+        "deps/openssl/config/archs/linux-ppc64le/asm/configdata.pm",
+        "deps/openssl/config/archs/linux-ppc64le/asm_avx2/configdata.pm",
+        "deps/openssl/config/archs/linux-ppc64le/no-asm/configdata.pm",
+        "deps/openssl/config/archs/linux-x86_64/asm/configdata.pm",
+        "deps/openssl/config/archs/linux-x86_64/asm/crypto/modes/aes-gcm-avx512.s",
+        "deps/openssl/config/archs/linux-x86_64/asm_avx2/configdata.pm",
+        "deps/openssl/config/archs/linux-x86_64/no-asm/configdata.pm",
+        "deps/openssl/config/archs/linux32-s390x/asm/configdata.pm",
+        "deps/openssl/config/archs/linux32-s390x/asm_avx2/configdata.pm",
+        "deps/openssl/config/archs/linux32-s390x/no-asm/configdata.pm",
+        "deps/openssl/config/archs/linux64-loongarch64/no-asm/configdata.pm",
+        "deps/openssl/config/archs/linux64-mips64/asm/configdata.pm",
+        "deps/openssl/config/archs/linux64-mips64/asm_avx2/configdata.pm",
+        "deps/openssl/config/archs/linux64-mips64/no-asm/configdata.pm",
+        "deps/openssl/config/archs/linux64-riscv64/asm/configdata.pm",
+        "deps/openssl/config/archs/linux64-riscv64/asm_avx2/configdata.pm",
+        "deps/openssl/config/archs/linux64-riscv64/no-asm/configdata.pm",
+        "deps/openssl/config/archs/linux64-s390x/asm/configdata.pm",
+        "deps/openssl/config/archs/linux64-s390x/asm_avx2/configdata.pm",
+        "deps/openssl/config/archs/linux64-s390x/no-asm/configdata.pm",
+        "deps/openssl/config/archs/solaris-x86-gcc/asm/configdata.pm",
+        "deps/openssl/config/archs/solaris-x86-gcc/asm_avx2/configdata.pm",
+        "deps/openssl/config/archs/solaris-x86-gcc/no-asm/configdata.pm",
+        "deps/openssl/config/archs/solaris64-x86_64-gcc/asm/configdata.pm",
+        "deps/openssl/config/archs/solaris64-x86_64-gcc/asm/crypto/modes/aes-gcm-avx512.s",
+        "deps/openssl/config/archs/solaris64-x86_64-gcc/asm_avx2/configdata.pm",
+        "deps/openssl/config/archs/solaris64-x86_64-gcc/no-asm/configdata.pm"
+      ],
+      "reviewSuggestions": [
+        "valid.env"
+      ],
+      "score": 91,
+      "lost": 8.6,
+      "breakdown": [
+        {
+          "id": "build",
+          "label": "build output",
+          "weight": 40,
+          "bytes": 4140913,
+          "share": 1.4,
+          "lost": 0.6
+        },
+        {
+          "id": "large",
+          "label": "large files",
+          "weight": 25,
+          "bytes": 95214491,
+          "share": 32,
+          "lost": 8
+        },
+        {
+          "id": "lockfile",
+          "label": "lockfiles",
+          "weight": 20,
+          "bytes": 0,
+          "share": 0,
+          "lost": 0
+        },
+        {
+          "id": "log",
+          "label": "logs",
+          "weight": 15,
+          "bytes": 0,
+          "share": 0,
+          "lost": 0
+        }
+      ],
+      "status": "Looks clean for an AI coding agent",
+      "estimatedTokens": 24838851
+    }
+  },
+  "skipped": [
+    "path — pass --command <name>, for example: dev-diagnosis all --command node",
+    "flakes — pass --flakes <runs-dir>, for example: dev-diagnosis all --flakes examples/runs",
+    "cache — add -- <build-command>, for example: dev-diagnosis all -- node build.mjs"
+  ],
+  "overall": "PASS",
+  "summary": {
+    "checks": {
+      "total": 4,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 3
+    },
+    "contextNoiseBytes": 99355404,
+    "cacheSavedPct": null
+  }
+}

@@ -1,0 +1,143 @@
+{
+  "command": "all",
+  "root": "/home/hatch/workspace/.scratch/repo-measurements/facebook_react_fixdemo",
+  "checks": {
+    "context": {
+      "root": "/home/hatch/workspace/.scratch/repo-measurements/facebook_react_fixdemo",
+      "files": 7227,
+      "bytes": 31977090,
+      "truncated": false,
+      "noise": [],
+      "review": [
+        {
+          "label": "fixtures/fiber-debugger/.env",
+          "reason": "environment-like file",
+          "bytes": 30,
+          "path": "fixtures/fiber-debugger/.env"
+        },
+        {
+          "label": "fixtures/nesting/.env",
+          "reason": "environment-like file",
+          "bytes": 45,
+          "path": "fixtures/nesting/.env"
+        },
+        {
+          "label": "packages/react-devtools-extensions/chrome/deploy.js",
+          "reason": "deployment script",
+          "bytes": 132,
+          "path": "packages/react-devtools-extensions/chrome/deploy.js"
+        },
+        {
+          "label": "packages/react-devtools-extensions/deploy.chrome.html",
+          "reason": "deployment script",
+          "bytes": 306,
+          "path": "packages/react-devtools-extensions/deploy.chrome.html"
+        },
+        {
+          "label": "packages/react-devtools-extensions/deploy.edge.html",
+          "reason": "deployment script",
+          "bytes": 304,
+          "path": "packages/react-devtools-extensions/deploy.edge.html"
+        },
+        {
+          "label": "packages/react-devtools-extensions/deploy.firefox.html",
+          "reason": "deployment script",
+          "bytes": 308,
+          "path": "packages/react-devtools-extensions/deploy.firefox.html"
+        },
+        {
+          "label": "packages/react-devtools-extensions/deploy.html",
+          "reason": "deployment script",
+          "bytes": 1208,
+          "path": "packages/react-devtools-extensions/deploy.html"
+        },
+        {
+          "label": "packages/react-devtools-extensions/deploy.js",
+          "reason": "deployment script",
+          "bytes": 1489,
+          "path": "packages/react-devtools-extensions/deploy.js"
+        },
+        {
+          "label": "packages/react-devtools-extensions/edge/deploy.js",
+          "reason": "deployment script",
+          "bytes": 130,
+          "path": "packages/react-devtools-extensions/edge/deploy.js"
+        },
+        {
+          "label": "packages/react-devtools-extensions/firefox/deploy.js",
+          "reason": "deployment script",
+          "bytes": 133,
+          "path": "packages/react-devtools-extensions/firefox/deploy.js"
+        }
+      ],
+      "suggestions": [],
+      "reviewSuggestions": [
+        ".env*"
+      ],
+      "score": 100,
+      "lost": 0,
+      "breakdown": [
+        {
+          "id": "build",
+          "label": "build output",
+          "weight": 40,
+          "bytes": 0,
+          "share": 0,
+          "lost": 0
+        },
+        {
+          "id": "large",
+          "label": "large files",
+          "weight": 25,
+          "bytes": 0,
+          "share": 0,
+          "lost": 0
+        },
+        {
+          "id": "lockfile",
+          "label": "lockfiles",
+          "weight": 20,
+          "bytes": 0,
+          "share": 0,
+          "lost": 0
+        },
+        {
+          "id": "log",
+          "label": "logs",
+          "weight": 15,
+          "bytes": 0,
+          "share": 0,
+          "lost": 0
+        }
+      ],
+      "status": "Looks clean for an AI coding agent",
+      "estimatedTokens": null,
+      "fix": {
+        "path": "/home/hatch/workspace/.scratch/repo-measurements/facebook_react_fixdemo/.aiignore",
+        "added": [
+          "fixtures/dom/public/test.mp4",
+          "package-lock.json",
+          "yarn.lock"
+        ],
+        "alreadyPresent": [],
+        "created": true
+      }
+    }
+  },
+  "skipped": [
+    "path — pass --command <name>, for example: dev-diagnosis all --command node",
+    "flakes — pass --flakes <runs-dir>, for example: dev-diagnosis all --flakes examples/runs",
+    "cache — add -- <build-command>, for example: dev-diagnosis all -- node build.mjs"
+  ],
+  "overall": "PASS",
+  "summary": {
+    "checks": {
+      "total": 4,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 3
+    },
+    "contextNoiseBytes": 0,
+    "cacheSavedPct": null
+  }
+}

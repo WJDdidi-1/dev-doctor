@@ -167,7 +167,9 @@ test('setup: --dry-run and --check together is a usage error', () => {
 test('setup: --dry-run without setup is a usage error', () => {
   const result = run(['--dry-run']);
   assert.equal(result.status, 2);
-  assert.match(result.stderr, /only apply to setup/);
+  // --dry-run is also valid with --fix (context and all), so the
+  // message names that exception.
+  assert.match(result.stderr, /--dry-run only applies to setup, or with --fix/);
 });
 
 test('setup: setup with --mcp is a usage error', () => {

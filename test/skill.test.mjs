@@ -61,6 +61,64 @@ test('skill: --skill-generate --global --project is a usage error', () => {
   assert.match(result.stderr, /choose one of --global or --project/);
 });
 
+test('skill: --skill-generate also creates AGENTS.md with the discovery section', () => {
+  const dir = tempDir('dev-diagnosis-skill-agents-');
+  const result = run(['--skill-generate'], { cwd: dir });
+  assert.equal(result.status, 0, result.stderr);
+  const agents = path.join(dir, 'AGENTS.md');
+  assert.match(result.stdout, new RegExp(`Wrote ${agents.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+  const content = fs.readFileSync(agents, 'utf8');
+  assert.match(content, /## dev-diagnosis/);
+  assert.match(content, /dev-diagnosis all/);
+  assert.match(content, /context --fix/);
+  assert.match(content, /https:\/\/github\.com\/WJDdidi-1\/dev-doctor/);
+});
+
+test('skill: --skill-generate appends to an existing AGENTS.md without touching it', () => {
+  const dir = tempDir('dev-diagnosis-skill-agents-append-');
+  const agents = path.join(dir, 'AGENTS.md');
+  fs.writeFileSync(agents, '# My repo rules\n\nNever deploy on Friday.\n');
+  const result = run(['--skill-generate'], { cwd: dir });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Appended a section to/);
+  const content = fs.readFileSync(agents, 'utf8');
+  assert.ok(content.startsWith('# My repo rules\n\nNever deploy on Friday.\n'));
+  assert.match(content, /## dev-diagnosis/);
+});
+
+test('skill: a second --skill-generate leaves AGENTS.md byte-identical', () => {
+  const dir = tempDir('dev-diagnosis-skill-agents-twice-');
+  const first = run(['--skill-generate'], { cwd: dir });
+  assert.equal(first.status, 0, first.stderr);
+  const agents = path.join(dir, 'AGENTS.md');
+  const before = fs.readFileSync(agents, 'utf8');
+  const second = run(['--skill-generate'], { cwd: dir });
+  assert.equal(second.status, 1);
+  assert.match(second.stderr, /already exists/);
+  assert.equal(fs.readFileSync(agents, 'utf8'), before);
+});
+
+test('skill: --skill-generate --global skips AGENTS.md (it belongs to a repo)', () => {
+  const home = tempDir('dev-diagnosis-skill-agents-home-');
+  const dir = tempDir('dev-diagnosis-skill-agents-global-');
+  const result = run(['--skill-generate', '--global'], {
+    cwd: dir,
+    env: { ...process.env, HOME: home },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Note: --global has no repo/);
+  assert.ok(!fs.existsSync(path.join(dir, 'AGENTS.md')));
+  assert.ok(fs.existsSync(path.join(home, '.claude', 'skills', 'dev-diagnosis', 'SKILL.md')));
+});
+
+test('skill: all --json writes no AGENTS.md and stays valid JSON', () => {
+  const dir = tempDir('dev-diagnosis-skill-json-');
+  const demoRepo = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'examples', 'demo-repo');
+  const result = run(['all', demoRepo, '--json'], { cwd: dir });
+  JSON.parse(result.stdout); // still valid JSON
+  assert.ok(!fs.existsSync(path.join(dir, 'AGENTS.md')));
+});
+
 test('skill: --global without --skill-generate is a usage error', () => {
   const result = run(['--global']);
   assert.equal(result.status, 2);
