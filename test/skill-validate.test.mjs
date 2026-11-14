@@ -17,6 +17,11 @@ test('skill-validate: a minimal valid file passes', () => {
   assert.deepEqual(validateSkillMd(valid(), 'dev-diagnosis'), { valid: true });
 });
 
+test('skill-validate: CRLF line endings are accepted', () => {
+  const crlf = valid().replaceAll('\n', '\r\n');
+  assert.deepEqual(validateSkillMd(crlf, 'dev-diagnosis'), { valid: true });
+});
+
 test('skill-validate: optional keys are accepted', () => {
   const text = valid({ extra: 'license: Apache-2.0\ncompatibility: Claude Code\nallowed-tools: Read Bash\n' });
   assert.deepEqual(validateSkillMd(text, 'dev-diagnosis'), { valid: true });

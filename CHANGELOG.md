@@ -1,6 +1,44 @@
 # Changelog
 
+## Unreleased
+
+- New: dev-diagnosis is now a pre-commit hook — this repo ships a
+  `.pre-commit-hooks.yaml`, so users add it to their
+  `.pre-commit-config.yaml` (id `dev-diagnosis`, rev = the release
+  carrying the manifest) and
+  every commit runs `dev-diagnosis context --changed`: it scores only
+  the files the change touches and fails the commit when the change's
+  score drops below 85, the same threshold as the `context` check.
+  The method is pre-commit's hook-manifest format (`language: node`,
+  version-pinned `additional_dependencies`, `pass_filenames: false`,
+  exit code 0 = pass). The hook never writes anything — on failure it
+  prints the noise and the fix, and the user runs
+  `dev-diagnosis context --fix --changed` and re-commits. The check
+  itself is unchanged: the hook reuses the round-15 `--changed`
+  command verbatim. Tests pin the manifest fields, the version
+  lockstep (pinned CLI, both documented revs), and the exact hook
+  command against real git fixtures: a staged 1.2 MB file fails with
+  exit 1 at 75/100, the documented fix clears it to exit 0, a clean
+  change passes. Honest limits: the hook only becomes usable once a
+  tagged release carries the manifest; it needs pre-commit and
+  Node.js 18+; `--changed` diffs the working tree against HEAD, so
+  unstaged noise blocks the commit too.
+
 ## 0.2.3 — 2026-11-14
+
+- Fix: the CI matrix went red on the first 0.2.3 push (0/12 jobs) and
+  this release fixes all four failure modes before shipping. The zsh
+  completion syntax check now skips when zsh is not installed (the
+  Ubuntu and Windows runners ship none). The TTY star-prompt test
+  now runs the CLI under python3's `pty.spawn` instead of `script`:
+  on macOS `script` exits as soon as its stdin hits EOF, and under a
+  test harness stdin is already EOF, so the child was killed before
+  it printed anything. `doctor`'s bare-temp-dir test now expects the
+  home check to warn on Windows, where `os.homedir()` reads the user
+  profile instead of `$HOME` — the warning is the correct behaviour.
+  The SKILL.md validator now accepts CRLF line endings, and
+  `.gitattributes` pins `skills/*/SKILL.md` to LF so a Windows
+  checkout cannot break the byte-identical marketplace test.
 
 - New: the MCP server now serves a prompt, `diagnose_repo`
   (`prompts/list` / `prompts/get`, advertised in `initialize`): the

@@ -3,3 +3,6 @@
 # summary's noise size from it, and CRLF conversion on a Windows
 # checkout would grow it by one byte per line (20,000 lines).
 examples/demo-repo/data/export.json binary
+# The marketplace test compares the repo SKILL.md byte-for-byte with
+# the generator template (LF); a Windows checkout must not convert it.
+skills/*/SKILL.md text eol=lf
