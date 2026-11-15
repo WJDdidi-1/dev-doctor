@@ -72,7 +72,14 @@ test('scan-cache: resolveScanCachePath defaults to the root file and resolves a 
   const root = tempDir('dev-diagnosis-scan-cache-');
   assert.equal(resolveScanCachePath(root, null), path.join(root, DEFAULT_SCAN_CACHE_FILENAME));
   assert.equal(resolveScanCachePath(root, 'sub/cache.json'), path.join(root, 'sub', 'cache.json'));
-  assert.equal(resolveScanCachePath(root, '/tmp/abs-cache.json'), path.resolve('/tmp', 'abs-cache.json'));
+  // An absolute location resolves against the filesystem root, not
+  // under the scan root — and on Windows the drive comes from the
+  // root, not the process cwd (the 2026-11-15 CI failure: the runner
+  // checks out on D: while the temp root lives on C:, so
+  // path.resolve('/tmp', ...) gives D:\tmp\... but the function
+  // returns C:\tmp\...). path.parse(root).root names the right drive
+  // on every platform; on POSIX it is just '/'.
+  assert.equal(resolveScanCachePath(root, '/tmp/abs-cache.json'), path.join(path.parse(root).root, 'tmp', 'abs-cache.json'));
 });
 
 test('scan-cache: save then load round-trips, and the file never holds a secret value', () => {
