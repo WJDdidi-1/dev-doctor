@@ -393,7 +393,10 @@ test('cli: flakes with a broken file next to a clean run still fails', () => {  
 });
 
 test('cli: cache on the demo repo pays', () => {
-  const result = run(['cache', '--cwd', freshDemoRepo(), '--', 'node', 'build.mjs']);
+  // --runs 3: the verdict is on medians, so a loaded runner cannot flip
+  // it with one slow warm run (the 2026-11-15 macOS Node 18 failure —
+  // the same code passed the same job on the parent commit).
+  const result = run(['cache', '--runs', '3', '--cwd', freshDemoRepo(), '--', 'node', 'build.mjs']);
   assert.equal(result.status, 0);
   assert.match(result.stdout, /Verdict: cache pays/);
 });

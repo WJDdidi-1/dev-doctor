@@ -273,6 +273,18 @@
   label from package.json, so the test file is not a ninth version
   mention. After bumping, re-render the demo GIF (`npm run demo`):
   the tape label changed, so the GIF is stale until then.
+- Fixed: the Windows CI failures the first 0.2.4 push exposed. The
+  version-bump script never ran on Windows — its entry-point guard
+  compared `import.meta.url` with `'file://' + process.argv[1]`, which
+  never matches a drive-letter path (`C:\...`), so it exited 0 having
+  done nothing; the guard now compares resolved filesystem paths. The
+  pre-commit manifest is pinned to LF in `.gitattributes` (a CRLF
+  checkout left the test's line-anchored parser seeing zero hooks),
+  and the parser itself now strips CRs. The scan-cache path test
+  pinned a POSIX-shaped expectation (`\tmp\...` without a drive
+  letter) instead of the resolved path. The `cache pays` CLI test now
+  runs `--runs 3`, so the verdict is on medians — a loaded macOS
+  runner flipped it once with a single slow warm run.
 
 ## 0.2.3 — 2026-11-14
 

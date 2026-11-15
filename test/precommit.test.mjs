@@ -36,7 +36,10 @@ const manifestText = readFileSync(path.join(root, '.pre-commit-hooks.yaml'), 'ut
 function parseManifest(text) {
   const hooks = [];
   let current = null;
-  for (const line of text.split('\n')) {
+  // Strip CR first: a CRLF checkout would otherwise leave a trailing
+  // \r on every line, and the line-anchored regexes below would match
+  // nothing (the 2026-11-15 Windows CI failures — zero hooks parsed).
+  for (const line of text.replace(/\r\n?/g, '\n').split('\n')) {
     const item = line.match(/^- id: (.+)$/);
     if (item) {
       current = { id: item[1].trim() };

@@ -72,7 +72,7 @@ test('scan-cache: resolveScanCachePath defaults to the root file and resolves a 
   const root = tempDir('dev-diagnosis-scan-cache-');
   assert.equal(resolveScanCachePath(root, null), path.join(root, DEFAULT_SCAN_CACHE_FILENAME));
   assert.equal(resolveScanCachePath(root, 'sub/cache.json'), path.join(root, 'sub', 'cache.json'));
-  assert.equal(resolveScanCachePath(root, '/tmp/abs-cache.json'), path.join('/tmp', 'abs-cache.json'));
+  assert.equal(resolveScanCachePath(root, '/tmp/abs-cache.json'), path.resolve('/tmp', 'abs-cache.json'));
 });
 
 test('scan-cache: save then load round-trips, and the file never holds a secret value', () => {

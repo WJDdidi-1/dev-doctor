@@ -6,3 +6,7 @@ examples/demo-repo/data/export.json binary
 # The marketplace test compares the repo SKILL.md byte-for-byte with
 # the generator template (LF); a Windows checkout must not convert it.
 skills/*/SKILL.md text eol=lf
+# The pre-commit test parses this manifest with line-anchored regexes;
+# a Windows checkout must not convert it to CRLF, or the parser sees
+# zero hooks (the 2026-11-15 Windows CI failures).
+.pre-commit-hooks.yaml text eol=lf
