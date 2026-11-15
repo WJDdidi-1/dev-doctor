@@ -58,6 +58,42 @@ test('report: the context section names the changed-files scope when set', () =>
   assert.match(md, /^Scope: changed files vs HEAD \(1 file\)$/m);
 });
 
+test('report: the context section names a staged scope as staged files', () => {
+  const run = runAll({ root: demoRepo });
+  run.checks.context.result.changed = { ref: 'HEAD', files: ['data/export.json'], staged: true };
+  const md = formatReportMarkdown(run);
+  assert.match(md, /^Scope: staged files vs HEAD \(1 file\)$/m);
+});
+
+test('report: the context section names a new-from-rev scope as new noise', () => {
+  const run = runAll({ root: demoRepo });
+  run.checks.context.result.changed = { ref: 'HEAD', files: ['data/export.json'], staged: false, newFromRev: 'HEAD' };
+  const md = formatReportMarkdown(run);
+  assert.match(md, /^Scope: new noise in changed files vs HEAD \(1 file\)$/m);
+  run.checks.context.result.changed = { ref: 'HEAD', files: ['data/export.json'], staged: true, newFromRev: 'HEAD' };
+  assert.match(formatReportMarkdown(run), /^Scope: new noise in staged files vs HEAD \(1 file\)$/m);
+});
+
+test('report: the context section reports suppressed secrets and a missing baseline', () => {
+  const run = runAll({ root: demoRepo });
+  const plain = formatReportMarkdown(run);
+  assert.doesNotMatch(plain, /suppressed by baseline/);
+  assert.doesNotMatch(plain, /secrets baseline .* not found/);
+  run.checks.context.result.secretsBaseline = { path: 'baseline.json', loaded: true, suppressed: 2 };
+  assert.match(formatReportMarkdown(run), /^2 secret findings suppressed by baseline baseline\.json$/m);
+  run.checks.context.result.secretsBaseline = { path: 'nope.json', loaded: false, suppressed: 0 };
+  assert.match(formatReportMarkdown(run), /Warning: secrets baseline 'nope\.json' not found — secrets checked without suppression\./);
+});
+
+test('report: the context section names the cache reuse when set', () => {
+  const run = runAll({ root: demoRepo });
+  const plain = formatReportMarkdown(run);
+  assert.doesNotMatch(plain, /^Cache: /m);
+  run.checks.context.result.cached = { files: 42, bytes: 123456, strategy: 'metadata', writtenAt: '2026-11-15T10:20:00.000Z' };
+  const md = formatReportMarkdown(run);
+  assert.match(md, /^Cache: 42 files unchanged since \d\d:\d\d \(metadata\)$/m);
+});
+
 test('report: a check that could not run is named, not hidden', () => {
   const run = runAll({ root: demoRepo });
   run.checks.flakes = { result: null, passed: false, verdict: 'could not run: no such directory', error: 'no such directory' };
@@ -148,4 +184,61 @@ test('report: no directory rollup when the noise is one directory', () => {
   const run = runAll({ root: demoRepo, flakesDir: demoRuns });
   const md = formatReportMarkdown(run);
   assert.doesNotMatch(md, /Top directories by noise/);
+});
+
+test('report: the binaries section lists the hardening table', () => {
+  const run = runAll({ root: demoRepo });
+  run.checks.binaries = {
+    result: {
+      root: demoRepo, top: 5, files: 10, checkedFiles: 2, totalBinaries: 1,
+      binaries: [{
+        file: 'bin/tool', bytes: 20480, format: 'elf', arch: 'x86-64', entropy: 5.21,
+        hardening: {
+          pie: 'disabled', nx: 'enabled', relro: 'disabled', stackProtector: 'unknown',
+          fortify: 'unknown', cet: 'disabled', btiPac: 'not_applicable',
+          rpath: 'disabled', runpath: 'disabled', stripped: 'enabled',
+        },
+        notes: ['stack protector: no dynamic symbol table — cannot tell from headers'],
+      }],
+    },
+    passed: true,
+    verdict: '1 native binary checked — see the hardening table',
+  };
+  const md = formatReportMarkdown(run);
+  assert.match(md, /^## binaries$/m);
+  assert.match(md, /^- bin\/tool — 20\.0 KB, elf x86-64, entropy 5\.21$/m);
+  assert.match(md, /pie: disabled  nx: enabled  relro: disabled  stripped: enabled/);
+  assert.match(md, /stack protector: unknown  fortify: unknown  cet: disabled  bti\/pac: not_applicable  rpath: disabled  runpath: disabled/);
+  assert.match(md, /note: stack protector: no dynamic symbol table/);
+  assert.match(md, /A checkup, not a security audit/);
+  assert.match(md, /^Verdict: PASS — 1 native binary checked/m);
+});
+
+test('report: a run with no binaries says so in the binaries section', () => {
+  const run = runAll({ root: demoRepo });
+  const md = formatReportMarkdown(run);
+  assert.match(md, /^## binaries$/m);
+  assert.match(md, /No native binaries found/);
+  assert.match(md, /^Verdict: PASS — no native binaries found/m);
+});
+
+test('report: a run with context skipped has no context section', () => {
+  // Only flakes ran, so the report has no context section at all —
+  // the skipped list is where the missing check is accounted for.
+  const run = runAll({ root: demoRepo, flakesDir: demoRuns, only: ['flakes'] });
+  const md = formatReportMarkdown(run);
+  assert.doesNotMatch(md, /## context/);
+  assert.match(md, /## skipped/);
+  assert.match(md, /context — not in --only flakes/);
+  assert.match(md, /binaries — not in --only flakes/);
+  assert.match(md, /^Overall: FAIL — 5 checks — 0 passed, 1 failed, 4 skipped/m);
+});
+
+test('report: the context section names a custom --min-score bar, and the default bar needs no line', () => {
+  const run = runAll({ root: demoRepo });
+  const plain = formatReportMarkdown(run);
+  assert.doesNotMatch(plain, /Threshold: --min-score/);
+  run.checks.context.result.minScore = 90;
+  const md = formatReportMarkdown(run);
+  assert.match(md, /^Threshold: --min-score 90 \(default 85\)$/m);
 });

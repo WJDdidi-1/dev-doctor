@@ -131,8 +131,7 @@ function wrapCommand(command) {
   return lines;
 }
 
-// Stage a fresh copy of the demo fixture plus a `dev-diagnosis` shim
-// that runs this checkout's bin. Returns the stage dir.
+// Stage a fresh copy of the demo fixture. Returns the stage dir.
 function stageFixture() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-diagnosis-demo-'));
   const examples = path.join(dir, 'examples');
@@ -140,26 +139,18 @@ function stageFixture() {
   for (const name of ['demo-repo', 'runs']) {
     fs.cpSync(path.join(repoRoot, 'examples', name), path.join(examples, name), { recursive: true });
   }
-  const binDir = path.join(dir, 'bin');
-  fs.mkdirSync(binDir);
-  const bin = path.join(repoRoot, 'bin', 'dev-diagnosis.js');
-  if (process.platform === 'win32') {
-    fs.writeFileSync(path.join(binDir, 'dev-diagnosis.cmd'), `@echo off\r\nnode "${bin}" %*\r\n`);
-  } else {
-    const shim = path.join(binDir, 'dev-diagnosis');
-    fs.writeFileSync(shim, `#!/bin/sh\nexec node "${bin}" "$@"\n`);
-    fs.chmodSync(shim, 0o755);
-  }
   return dir;
 }
 
 function runScene(stage, scene) {
   const tokens = splitQuoted(scene.run);
-  const shim = path.join(stage, 'bin', process.platform === 'win32' ? 'dev-diagnosis.cmd' : 'dev-diagnosis');
-  const result = spawnSync(shim, tokens.slice(1), {
+  // Run the scene's command with node directly against this
+  // checkout's bin: spawning a `dev-diagnosis` shim fails on
+  // Windows (spawnSync of the .cmd shim returns EINVAL), and the
+  // shown command comes from the tape, not from how it is run.
+  const result = spawnSync(process.execPath, [path.join(repoRoot, 'bin', 'dev-diagnosis.js'), ...tokens.slice(1)], {
     cwd: scene.cwd ? path.join(stage, scene.cwd) : stage,
     encoding: 'utf8',
-    env: { ...process.env, PATH: `${path.join(stage, 'bin')}${path.delimiter}${process.env.PATH}` },
   });
   if (result.error) throw new Error(`scene ${scene.name}: failed to run ${scene.run}: ${result.error.message}`);
   return (result.stdout || '') + (result.stderr || '');

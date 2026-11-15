@@ -51,7 +51,7 @@ test('action: the documented command form really runs and reports a summary', ()
   const repoCopy = path.join(dir, 'demo-repo');
   fs.cpSync(path.join(repo, 'examples', 'demo-repo'), repoCopy, { recursive: true });
   const result = spawnSync(process.execPath, [bin, 'all', repoCopy, '--command', 'node', '--flakes', 'examples/runs', '--', 'node', 'build.mjs'], { encoding: 'utf8', cwd: repo });
-  assert.match(result.stdout, /^Summary: 4 checks/m);
+  assert.match(result.stdout, /^Summary: 5 checks/m);
   assert.match(result.stdout, /cache saved \d+%/);
   // The demo fixture is intentionally noisy, so the action step would
   // fail the job (exit 1) — that is the point: a failing check blocks.

@@ -10,6 +10,10 @@ import { tempDir } from '../scripts/support.mjs';
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const tapePath = path.join(root, 'docs', 'demo.tape');
 const renderDemo = path.join(root, 'scripts', 'render-demo.mjs');
+// The expected label comes from package.json, not a literal: the label
+// is a version mention, and a literal here would be one more place a
+// release bump has to remember (scripts/bump-version.mjs moves the tape).
+const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 
 function check(tape) {
   return spawnSync(process.execPath, [renderDemo, '--check', '--tape', tape], { encoding: 'utf8' });
@@ -17,7 +21,7 @@ function check(tape) {
 
 test('demo tape: parses — label, output, title, 3 scenes, end card', () => {
   const tape = parseTape(fs.readFileSync(tapePath, 'utf8'));
-  assert.equal(tape.label, 'v0.2.3');
+  assert.equal(tape.label, `v${pkg.version}`);
   assert.equal(tape.output, 'docs/demo.gif');
   assert.equal(tape.title.lines[0], 'Your AI agent just read');
   assert.equal(tape.scenes.length, 3);
@@ -31,7 +35,7 @@ test('demo tape: parses — label, output, title, 3 scenes, end card', () => {
 
 test('demo tape: malformed tapes fail to parse', () => {
   const good = fs.readFileSync(tapePath, 'utf8');
-  assert.throws(() => parseTape(good.replace('Label v0.2.3', '')), /missing Label/);
+  assert.throws(() => parseTape(good.replace(`Label v${pkg.version}`, '')), /missing Label/);
   assert.throws(() => parseTape(good.replace(/^Scene fix$/m, 'Scene')), /needs a name/);
   assert.throws(() => parseTape(`${good}\nBogus 1\n`), /unknown directive/);
 });

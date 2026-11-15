@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * dev-diagnosis — one offline CLI that diagnoses a repo the way four small
- * tools do: context noise for AI agents, missing CLI commands, build-cache
- * value, and flaky tests.
+ * dev-diagnosis — one offline CLI that diagnoses a repo the way five small
+ * tools do: context noise for AI agents, native-binary checkups, missing
+ * CLI commands, build-cache value, and flaky tests.
  *
  * Standard-library Node.js only, no network, no account. Works on Linux,
  * macOS and Windows: all paths go through node:path, JUnit input is
@@ -13,7 +13,11 @@
  * found something to fix, or a check could not run; 2 = usage error.
  * With --fix the exit code follows a re-scan after the fix, so a fix
  * that leaves the repo clean exits 0. With --fix --dry-run nothing is
- * written, so the exit code follows the repo as it stands.
+ * written, so the exit code is 1 when the fix would change .aiignore
+ * — even when the score passes — and 0 only when the fix would change
+ * nothing and the repo passes. That is prettier --check's rule, applied
+ * to the preview: the dry run answers "would the fix change anything?",
+ * not "does the repo pass?".
  *
  * Agent modes: --mcp serves the checks over MCP on stdio (see
  * lib/mcp.mjs); --skill-generate writes a Claude Agent Skills SKILL.md
@@ -26,15 +30,19 @@ import { fileURLToPath } from 'node:url';
 import { AIIGNORE_HEADER, estimateTokens, formatBytes } from '../lib/context.mjs';
 import {
   UsageError, allJson, applyContextFixAndRescan, formatSummary,
-  previewContextFix, rescanContext, runAll, runCacheCheck, runContextCheck,
-  runFlakesCheck, runPathCheck, stripCacheStdout,
+  previewContextFix, rescanContext, runAll, runBinariesCheck, runCacheCheck, runContextCheck,
+  runFlakesCheck, runPathCheck, runSecretsCheck, selectChecks, stripCacheStdout,
 } from '../lib/checks.mjs';
 import { runMcpServer } from '../lib/mcp.mjs';
 import { runDoctor } from '../lib/doctor.mjs';
 import { generateCompletion, knownCommands, knownOptions } from '../lib/completion.mjs';
 import { ensureAgentsSection, generateSkill } from '../lib/skill.mjs';
 import { applySetup, checkSetup, planSetup } from '../lib/setup.mjs';
+import { writeSecretsBaseline } from '../lib/baseline.mjs';
 import { formatFlakesTable } from '../lib/flakes.mjs';
+import { MIN_BINARY_BYTES } from '../lib/binaries.mjs';
+import { formatContextAnnotations } from '../lib/annotations.mjs';
+import { formatScanCacheLine } from '../lib/scan-cache.mjs';
 import { formatMs, formatReportMarkdown, formatTokens, section, starPromptLine, verdictLine } from '../lib/report.mjs';
 
 const VERSION = JSON.parse(
@@ -44,8 +52,10 @@ const VERSION = JSON.parse(
 const USAGE = `dev-diagnosis: one diagnosis for your repo, your commands, your cache and your tests.
 
 Usage:
-  dev-diagnosis [all] [path] [--command <name>] [--flakes <dir>] [--fix] [--dry-run] [--changed[=<ref>]] [--report <file>] [-- <build-command...>]
-  dev-diagnosis context [path] [--json] [--fix] [--dry-run] [--changed[=<ref>]]
+  dev-diagnosis [all] [path] [--command <name>] [--flakes <dir>] [--fix] [--dry-run] [--changed[=<ref>]] [--staged] [--new-from-rev[=<ref>]] [--annotations] [--cache] [--cache-location <file>] [--min-score <n>] [--only <checks>] [--skip <checks>] [--secrets-baseline <file>] [--report <file>] [-- <build-command...>]
+  dev-diagnosis context [path] [--json] [--fix] [--dry-run] [--changed[=<ref>]] [--staged] [--new-from-rev[=<ref>]] [--annotations] [--cache] [--cache-location <file>] [--min-score <n>] [--secrets-baseline <file>] [--write-secrets-baseline <file>]
+  dev-diagnosis secrets <file>... [--json] [--secrets-baseline <file>] [--write-secrets-baseline <file>]
+  dev-diagnosis binaries [path] [--json] [--top N]
   dev-diagnosis path <command> [--json]
   dev-diagnosis cache [--json] [--cache-dir <dir>] [--cwd <dir>] [--runs N] -- <build-command...>
   dev-diagnosis flakes <runs-dir> [--json] [--top N]
@@ -59,15 +69,33 @@ Usage:
 
 Commands:
   all       Run every check that has what it needs and print one unified
-            report. context always runs on [path] (default: current
-            directory). A bare path is the same as all <path>.
-            path runs when --command is given, flakes when
+            report. context runs on [path] (default: current directory)
+            unless --only or --skip excludes it. A bare path is the same
+            as all <path>. path runs when --command is given, flakes when
             --flakes is given, cache when a build command follows --.
             Checks without their input are listed as skipped, with the
             command that would run them.
   context   Find the files an AI coding agent should not read: build
             output, lockfiles, logs and oversized files. Prints a 0-100
             score and the .aiignore-style suggestions that would fix it.
+  secrets   Scan named files for secrets only: the same content-level
+            credential shapes the context check looks for (AWS keys,
+            GitHub tokens, private keys, Slack tokens, high-entropy
+            values assigned to a key-like name). Prints the file, rule
+            and line of each finding — never the value — and exits 1
+            when one is found. Use it on a commit message file (the
+            pre-commit hook does), or on any file before sharing it.
+            --secrets-baseline suppresses triaged findings;
+            --write-secrets-baseline records them instead of judging.
+  binaries  Check up the largest native binaries in a repo (ELF, PE,
+            Mach-O): one hardening table each — PIE, NX, RELRO,
+            stripped, stack protector, fortify, CET/BTI-PAC, RPATH,
+            RUNPATH — plus whole-file entropy. A checkup, not a
+            security audit: it reports what the headers say and never
+            assesses exploitability, and it always passes — a binary
+            with PIE disabled is a fact, not a failure. --top N shows
+            the N largest (default 5, max 20); only files 16 KB or
+            larger are checked.
   path      Diagnose why a CLI command is missing: one row per shell
             context (current, login, non-login, daemon-like), shadowed
             copies, toolchain installs, and a copy-paste fix.
@@ -109,14 +137,16 @@ Commands:
             dev-diagnosis completion bash > ~/.bash_completion.d/dev-diagnosis
 
 Options:
-  --json          machine-readable output (context, path, cache, flakes, all)
+  --json          machine-readable output (context, binaries, path, cache, flakes, all)
   --fix           write the context check's .aiignore suggestions into
                   <path>/.aiignore (context and all only), then re-scan:
                   the verdict and the exit code follow the post-fix
                   score. Entries that are already there are left alone;
                   nothing else in the file is changed. With --dry-run,
                   show what would be written instead of writing it.
-  --top N         show only the N highest-ranked flaky tests
+  --top N         with flakes: show only the N highest-ranked flaky
+                  tests; with binaries: show only the N largest
+                  binaries (default 5, max 20)
   --runs N        with cache (and all): time the build N times cold
                   and N times warm (default 1, at most 10) and judge
                   the verdict on the medians, with the min–max spread
@@ -124,6 +154,17 @@ Options:
                   flips the verdict between repeats — so 3 or 5 runs
                   steadies it. The method is hyperfine's: several
                   timed runs and a median, not one sample.
+  --min-score <n> with context (and all): pass at this context score
+                  instead of 85 — a whole number from 0 to 100. A
+                  strict team passes at 95; an old repo starts at 70
+                  and raises the bar as it cleans up. The verdict, the
+                  exit code, the annotations and the report all follow
+                  the bar you set, and the result carries it as
+                  'minScore', so a 90/100 repo failing a 95 bar says
+                  so instead of printing a clean status next to a
+                  FAIL. The method is Biome's: the threshold is a
+                  number the user sets, not a constant baked into the
+                  verdict.
   --report <file> with all: also write this run as a Markdown report
                   file, ready to paste to an agent or attach to a PR.
                   Works with --json and --fix; the report reflects
@@ -138,14 +179,98 @@ Options:
                   the repo's. Needs a git repo; use --changed=main to
                   compare against another ref. The method is bat's: a
                   tool that reads files should know what changed.
+  --staged        with --changed (context and all): scan only the files
+                  staged in the index vs <ref>, so the verdict judges
+                  exactly what will be committed — an unstaged file
+                  never blocks it, and an untracked file is judged
+                  once it is staged. The pre-commit hook runs with it.
+                  The method is lint-staged's: run against the files
+                  staged in Git.
+  --new-from-rev[=<ref>]
+                  with context (and all): implies --changed, and
+                  reports only noise that is new since <ref>
+                  (default HEAD, or --changed's ref when it names
+                  one) — a file already noisy at the ref counts only
+                  its growth, so touching a 2 MB lockfile to bump
+                  one version adds no noise, while growing it by
+                  100 KB reports exactly those 100 KB. A renamed
+                  file counts as new (its old path is not traced).
+                  Review items and secret findings are still
+                  reported for every changed file: a secret is a
+                  leak whenever it was added. The method is
+                  golangci-lint's --new-from-rev, at file level.
+  --annotations   with context (and all): also print the top noise
+                  items as GitHub Actions workflow commands
+                  (::warning file=...::...), so they surface on the
+                  run's annotations panel without opening the log —
+                  no token, no file, no upload. A failing score adds
+                  one run-level ::error::. At most 10 items, the
+                  platform's per-level cap. With --json the lines go
+                  to stderr so stdout stays parseable. The method is
+                  golangci-lint's github-actions output format.
+  --cache         with context (and all): reuse the scan cache for
+                  unchanged files (.dev-diagnosis-cache.json at the
+                  scan root): a second scan of an unchanged tree
+                  skips re-reading files whose size and mtime still
+                  match, so a 44-second scan of a large repo comes
+                  back in about 5 seconds. Opt-in, off by default;
+                  the cache file is plain JSON (fingerprints only —
+                  findings carry rule and line, never a value) and
+                  is excluded from the scan. --cache-location <file>
+                  moves it. A changed .aiignore or .gitignore, a new
+                  tool version or a corrupt cache means a full
+                  re-scan. The cache is a local performance artifact,
+                  not a security boundary: a hand-edited cache file
+                  could hide a finding, the same as a hand-edited
+                  .eslintcache — delete the file to force a fresh
+                  scan. Add it to .gitignore: it is machine-local.
+                  The method is ESLint's --cache, metadata strategy
+                  only — hashing would cost the reads the cache
+                  exists to avoid.
+  --only <checks>
+                  with all: run only the named checks, comma-separated
+                  (context, binaries, path, flakes, cache). Cannot be combined
+                  with --skip.
+  --skip <checks>
+                  with all: run every check except the named ones,
+                  comma-separated. The cache check runs the build
+                  twice, so all --skip cache is the fast path when the
+                  build itself is not under suspicion. Cannot be
+                  combined with --only. Checks skipped this way are
+                  listed as skipped, so the summary stays honest.
+                  The method is super-linter's VALIDATE_ toggles: one
+                  list selects the checks, the rest are skipped.
+  --secrets-baseline <file>
+                  with context, all and secrets: read a secrets baseline
+                  (see --write-secrets-baseline) and suppress the
+                  findings it already covers, so a triaged false
+                  positive stops re-alerting. Once a baseline exists,
+                  a secret finding it does not cover fails the check
+                  even when the score passes — that is what lets the
+                  pre-commit hook block a new secret without failing
+                  forever on a known one. A missing file is not an
+                  error: the scan runs unsuppressed and warns. The
+                  method is detect-secrets': a baseline of hashed
+                  findings, audit, and fail-only-on-new.
+  --write-secrets-baseline <file>
+                  with context and secrets: scan, then write a secrets
+                  baseline file recording the secret findings found
+                  (fingerprints only — the file never holds a value,
+                  so it is safe to commit). Prints every finding it
+                  records: review that list before committing the
+                  file, because a baselined finding stops alerting.
+                  Re-running it overwrites the file. Cannot be
+                  combined with --secrets-baseline or --fix.
   --sandbox <dir> restrict --mcp to paths under <dir> (--root is an alias)
   --global        with --skill-generate: write the skill to ~/.claude/skills
   --project       with --skill-generate: write the skill to ./.claude/skills
   --dry-run       with setup, or with --fix (context and all): show
                   the preview without writing anything. With --fix it
                   lists the .aiignore entries that would be added (and
-                  the header a new file would get), and the exit code
-                  follows the repo as it stands, since nothing changed.
+                  the header a new file would get), and exits 1 when
+                  the fix would change .aiignore — even when the score
+                  passes — like prettier --check; 0 only when nothing
+                  would change and the repo passes.
   --check         with setup: report which agents are wired, without writing
   -h, --help      show this help
   -v, --version   print the version
@@ -153,8 +278,10 @@ Options:
 Exit codes: 0 = every check that ran passed; 1 = a check found something
 to fix or could not run; 2 = usage error. With --fix the exit code
 follows a re-scan after the fix, so a fix that leaves the repo clean
-exits 0. With --fix --dry-run nothing is written, so the exit code
-follows the repo as it stands.
+exits 0. With --fix --dry-run nothing is written, so the exit code is 1
+when the fix would change .aiignore — even when the score passes — and 0
+only when the fix would change nothing and the repo passes (prettier
+--check's rule, applied to the preview).
 `;
 
 // The completion spec is the single source of truth for what the
@@ -207,7 +334,9 @@ function parseArgs(argv) {
   const parsed = {
     command: null, positional: [], json: false, fix: false, help: false, version: false,
     commandName: null, flakesDir: null, cacheDir: null, cwd: null, top: null,
-    report: null, runs: null, changed: null,
+    report: null, runs: null, changed: null, staged: false, newFromRev: null, annotations: false,
+    cache: false, cacheLocation: null, minScore: null,
+    secretsBaseline: null, writeSecretsBaseline: null, only: null, skip: null,
     buildCommand: null, error: null,
     mcp: false, sandbox: null, skillGenerate: false, skillGlobal: false, skillProject: false,
     dryRun: false, check: false,
@@ -273,6 +402,17 @@ function parseArgs(argv) {
       const value = Number(arg.slice('--runs='.length));
       if (!Number.isInteger(value) || value < 1 || value > 10) parsed.error = '--runs needs an integer from 1 to 10';
       else parsed.runs = value;
+    } else if (arg === '--min-score') {
+      const raw = argv[i + 1];
+      const value = raw == null ? NaN : Number(raw);
+      if (raw == null || !/^\d+$/.test(raw) || value < 0 || value > 100) parsed.error = '--min-score needs a whole number from 0 to 100';
+      else parsed.minScore = value;
+      i += 1;
+    } else if (arg.startsWith('--min-score=')) {
+      const raw = arg.slice('--min-score='.length);
+      const value = Number(raw);
+      if (!/^\d+$/.test(raw) || value < 0 || value > 100) parsed.error = '--min-score needs a whole number from 0 to 100';
+      else parsed.minScore = value;
     } else if (arg === '--report') {
       parsed.report = argv[i + 1];
       if (parsed.report === undefined) parsed.error = '--report needs a value';
@@ -281,6 +421,22 @@ function parseArgs(argv) {
       const value = arg.slice('--report='.length);
       if (!value) parsed.error = '--report needs a value';
       else parsed.report = value;
+    } else if (arg === '--secrets-baseline') {
+      parsed.secretsBaseline = argv[i + 1];
+      if (parsed.secretsBaseline === undefined) parsed.error = '--secrets-baseline needs a value';
+      i += 1;
+    } else if (arg.startsWith('--secrets-baseline=')) {
+      const value = arg.slice('--secrets-baseline='.length);
+      if (!value) parsed.error = '--secrets-baseline needs a value';
+      else parsed.secretsBaseline = value;
+    } else if (arg === '--write-secrets-baseline') {
+      parsed.writeSecretsBaseline = argv[i + 1];
+      if (parsed.writeSecretsBaseline === undefined) parsed.error = '--write-secrets-baseline needs a value';
+      i += 1;
+    } else if (arg.startsWith('--write-secrets-baseline=')) {
+      const value = arg.slice('--write-secrets-baseline='.length);
+      if (!value) parsed.error = '--write-secrets-baseline needs a value';
+      else parsed.writeSecretsBaseline = value;
     } else if (arg === '--changed') {
       // Bare --changed means HEAD; a ref other than HEAD takes the
       // = form (--changed=main), so a positional path after the flag
@@ -290,6 +446,47 @@ function parseArgs(argv) {
       const value = arg.slice('--changed='.length);
       if (!value) parsed.error = '--changed needs a value after =';
       else parsed.changed = value;
+    } else if (arg === '--staged') {
+      parsed.staged = true;
+    } else if (arg === '--new-from-rev') {
+      // Bare --new-from-rev means "new since HEAD"; a ref other than
+      // HEAD takes the = form, like --changed, so a positional path
+      // after the flag is never swallowed as a ref.
+      parsed.newFromRev = true;
+    } else if (arg.startsWith('--new-from-rev=')) {
+      const value = arg.slice('--new-from-rev='.length);
+      if (!value) parsed.error = '--new-from-rev needs a value after =';
+      else parsed.newFromRev = value;
+    } else if (arg === '--annotations') {
+      parsed.annotations = true;
+    } else if (arg === '--cache') {
+      parsed.cache = true;
+    } else if (arg === '--cache-location') {
+      parsed.cacheLocation = argv[i + 1];
+      if (parsed.cacheLocation === undefined) parsed.error = '--cache-location needs a value';
+      i += 1;
+    } else if (arg.startsWith('--cache-location=')) {
+      const value = arg.slice('--cache-location='.length);
+      if (!value) parsed.error = '--cache-location needs a value after =';
+      else parsed.cacheLocation = value;
+    } else if (arg === '--only') {
+      const value = argv[i + 1];
+      if (value === undefined) parsed.error = '--only needs a value';
+      else parsed.only = parsed.only == null ? value : `${parsed.only},${value}`;
+      i += 1;
+    } else if (arg.startsWith('--only=')) {
+      const value = arg.slice('--only='.length);
+      if (!value) parsed.error = '--only needs a value after =';
+      else parsed.only = parsed.only == null ? value : `${parsed.only},${value}`;
+    } else if (arg === '--skip') {
+      const value = argv[i + 1];
+      if (value === undefined) parsed.error = '--skip needs a value';
+      else parsed.skip = parsed.skip == null ? value : `${parsed.skip},${value}`;
+      i += 1;
+    } else if (arg.startsWith('--skip=')) {
+      const value = arg.slice('--skip='.length);
+      if (!value) parsed.error = '--skip needs a value after =';
+      else parsed.skip = parsed.skip == null ? value : `${parsed.skip},${value}`;
     } else if (arg.startsWith('-')) {
       // Suggest the option the user almost certainly meant
       // (--comand=node -> --command); the part after '=' is a value,
@@ -310,13 +507,35 @@ function printContext(result, json) {
   }
   console.log(`Repo: ${result.root}`);
   console.log(`Files: ${result.files}  Size: ${formatBytes(result.bytes)}  Score: ${result.score}/100 — ${result.status}`);
+  // A custom bar is named next to the score, so a 90/100 FAIL at a
+  // 95 bar reads as a bar decision, not a contradiction with the
+  // clean status above it. The default 85 needs no line.
+  if (result.minScore != null && result.minScore !== 85) {
+    console.log(`Threshold: --min-score ${result.minScore} (default 85)`);
+  }
   if (result.changed) {
     const noun = result.changed.files.length === 1 ? 'file' : 'files';
-    console.log(`Scope: changed files vs ${result.changed.ref} (${result.changed.files.length} ${noun})`);
+    const scope = result.changed.staged ? 'staged files' : 'changed files';
+    const what = result.changed.newFromRev ? `new noise in ${scope}` : scope;
+    console.log(`Scope: ${what} vs ${result.changed.ref} (${result.changed.files.length} ${noun})`);
   }
-  if (result.truncated) console.log('Note: scan stopped at the file limit; totals are a lower bound.');
+  if (result.truncated) {
+    const truncated = result.unknowns?.find((u) => u.kind === 'truncated');
+    console.log(truncated
+      ? `Note: scan stopped at the file limit; score is based on ${result.visibleFilesPct}% of files (${truncated.files} not counted) — totals are a lower bound.`
+      : 'Note: scan stopped at the file limit; totals are a lower bound.');
+  }
+  // A cache hit is a fingerprint-verified earlier observation, not a
+  // blind spot — but the report must say the cache was used, so a
+  // cached scan never looks like a fresh one.
+  const cacheLine = formatScanCacheLine(result.cached);
+  if (cacheLine) console.log(cacheLine);
   for (const item of result.breakdown) {
     console.log(`  ${item.label}: ${formatBytes(item.bytes)} (${item.share}%) — lost ${item.lost} of ${item.weight}`);
+  }
+  if ((result.unknowns?.length ?? 0) > 0) {
+    console.log('Unknowns:');
+    for (const unknown of result.unknowns) console.log(`  - ${unknown.detail}`);
   }
   if (result.noise.length > 0) {
     console.log('Noise to keep away from an AI agent:');
@@ -367,10 +586,49 @@ function printContext(result, json) {
     console.log('Consider for .aiignore (advisory — --fix does not write these):');
     for (const suggestion of result.reviewSuggestions) console.log(`  ${suggestion}`);
   }
+  // A baseline never silences anything invisibly: say how many
+  // triaged findings it suppressed, so the reader knows the review
+  // list above is the new findings only.
+  if (result.secretsBaseline?.suppressed > 0) {
+    const n = result.secretsBaseline.suppressed;
+    console.log(`${n} secret finding${n === 1 ? '' : 's'} suppressed by baseline ${result.secretsBaseline.path}`);
+  }
   if (result.suggestions.length > 0) {
     console.log('Fix: add these to .aiignore (or the agent\'s ignore list):');
     for (const suggestion of result.suggestions) console.log(`  ${suggestion}`);
   }
+}
+
+// GitHub Actions annotations for the context check (golangci-lint's
+// --out-format=github-actions method): printed to stdout in text
+// mode so the runner picks them up, to stderr under --json so the
+// JSON on stdout stays parseable. A no-op when the flag is off, the
+// check did not run, or the result has nothing to annotate.
+function printAnnotations(result, { json, enabled }) {
+  if (!enabled || !result) return;
+  const text = formatContextAnnotations(result);
+  if (!text) return;
+  if (json) console.error(text);
+  else console.log(text);
+}
+
+// A requested baseline file that does not exist yet: warn once on
+// stderr (never stdout, so --json stays parseable) and let the scan
+// stand unsuppressed — the user is usually one `context
+// --write-secrets-baseline` away from having one.
+function warnMissingSecretsBaseline(check) {
+  const baseline = check?.result?.secretsBaseline;
+  if (baseline && !baseline.loaded) {
+    console.error(`Warning: secrets baseline '${baseline.path}' not found — secrets checked without suppression.`);
+  }
+}
+
+// A scan cache that could not be read or written: warn once per
+// problem on stderr (never stdout, so --json stays parseable) and let
+// the scan stand — it ran fresh, the cache just did not help this
+// time. A missing cache file is the normal first run and never warns.
+function warnScanCache(check) {
+  for (const warning of check?.cacheWarnings ?? []) console.error(`Warning: ${warning}`);
 }
 
 function printFixPreview(fix, suggestionCount) {
@@ -442,6 +700,28 @@ function printFlakes(result, top, json) {
   console.log(formatFlakesTable(result, top));
 }
 
+function printBinaries(result, json) {
+  if (json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  const scope = `checked ${result.checkedFiles} file${result.checkedFiles === 1 ? '' : 's'} ${formatBytes(MIN_BINARY_BYTES)} or larger out of ${result.files}`;
+  if (result.binaries.length === 0) {
+    console.log(`No native binaries found (${scope}).`);
+    return;
+  }
+  const shown = result.binaries.length;
+  const more = result.totalBinaries > shown ? ` — largest ${shown} shown` : '';
+  console.log(`${result.totalBinaries} native binar${result.totalBinaries === 1 ? 'y' : 'ies'}${more} (${scope})`);
+  for (const binary of result.binaries) {
+    const h = binary.hardening;
+    console.log(`${binary.file} — ${formatBytes(binary.bytes)}, ${binary.format} ${binary.arch}, entropy ${binary.entropy ?? '—'}`);
+    console.log(`  pie: ${h.pie}  nx: ${h.nx}  relro: ${h.relro}  stripped: ${h.stripped}`);
+    console.log(`  stack protector: ${h.stackProtector}  fortify: ${h.fortify}  cet: ${h.cet}  bti/pac: ${h.btiPac}  rpath: ${h.rpath}  runpath: ${h.runpath}`);
+    for (const note of binary.notes) console.log(`  note: ${note}`);
+  }
+}
+
 function printCache(result, json) {
   if (json) {
     console.log(JSON.stringify(stripCacheStdout(result), null, 2));
@@ -457,6 +737,35 @@ function printCache(result, json) {
     console.log(`Runs: ${result.runs} cold (${spread(result.coldRuns)}) and ${result.runs} warm (${spread(result.warmRuns)}); times are medians`);
   }
   console.log(`Verdict: ${result.verdict} — ${result.verdictDetail}`);
+}
+
+function printSecrets(result, json) {
+  if (json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  const noun = result.files.length === 1 ? 'file' : 'files';
+  console.log(`Scanned ${result.files.length} ${noun} for secrets`);
+  if (result.errors.length > 0) {
+    for (const error of result.errors) console.log(`  could not read ${error.file} — ${error.reason}`);
+  }
+  if (result.findings.length > 0) {
+    // A finding is a file, a rule and a line — never the value, so
+    // this output is safe to paste into a PR or a chat. The reason
+    // says what to do: rotate the credential, because a match is
+    // unverified and this tool cannot tell a live key from a dead one.
+    console.log('Possible secrets:');
+    for (const finding of result.findings) {
+      console.log(`  ${finding.path}:${finding.line} (${finding.rule}) — ${finding.reason}`);
+    }
+  }
+  // A baseline never silences anything invisibly: say how many
+  // triaged findings it suppressed, so the reader knows the list
+  // above is the new findings only.
+  if (result.secretsBaseline?.suppressed > 0) {
+    const n = result.secretsBaseline.suppressed;
+    console.log(`${n} secret finding${n === 1 ? '' : 's'} suppressed by baseline ${result.secretsBaseline.path}`);
+  }
 }
 
 function printSetupPreview(plan) {
@@ -513,7 +822,7 @@ function runDoctorCommand(args) {
   // Doctor takes no options except --json: --check and --dry-run are
   // already rejected above with the setup-only message, and the rest
   // belong to the checks, not to the checkup.
-  if (args.fix || args.report || args.changed != null || args.commandName || args.flakesDir || args.cacheDir || args.cwd || args.top != null || args.runs != null || args.buildCommand || args.positional.length > 0) {
+  if (args.fix || args.report || args.changed != null || args.newFromRev != null || args.commandName || args.flakesDir || args.cacheDir || args.cwd || args.top != null || args.runs != null || args.buildCommand || args.positional.length > 0 || args.secretsBaseline != null || args.writeSecretsBaseline != null || args.only != null || args.skip != null || args.annotations || args.cache || args.cacheLocation != null || args.minScore != null) {
     console.error('Error: doctor takes no options except --json.');
     console.error('Run with --help to see the available options.');
     return 2;
@@ -597,6 +906,16 @@ async function main(argv) {
     console.error('Run with --help to see the available options.');
     return 2;
   }
+  // The scan cache is a per-scan option, not a server mode: the MCP
+  // server takes it per call instead (cache: true on diagnose_context
+  // / diagnose_all), and --skill-generate only writes the skill file.
+  // The pass bar is the same kind of per-scan option (minScore on the
+  // same two tools).
+  if ((args.cache || args.cacheLocation != null || args.minScore != null) && (args.mcp || args.skillGenerate)) {
+    console.error('Error: --cache, --cache-location and --min-score only apply to context (and all), not to --mcp or --skill-generate.');
+    console.error('Run with --help to see the available options.');
+    return 2;
+  }
   if (args.mcp) {
     await runMcpServer({ sandbox: args.sandbox, version: VERSION });
     return 0;
@@ -657,9 +976,26 @@ async function main(argv) {
     console.error('Run with --help to see the available options.');
     return 2;
   }
+  // --staged narrows --changed to the staged set; on its own it
+  // means nothing, so it is a usage error rather than a silent
+  // whole-repo scan — the same rule as --dry-run without --fix.
+  // --new-from-rev implies --changed, so --staged with it is fine.
+  if (args.staged && args.changed == null && args.newFromRev == null) {
+    console.error('Error: --staged only applies with --changed (context and all).');
+    console.error('Run with --help to see the available options.');
+    return 2;
+  }
+  // --cache-location moves the scan cache; on its own it means
+  // nothing, so it is a usage error rather than a silently ignored
+  // path — the same rule as --staged without --changed.
+  if (args.cacheLocation != null && !args.cache) {
+    console.error('Error: --cache-location needs --cache.');
+    console.error('Run with --help to see the available options.');
+    return 2;
+  }
   if (args.command === 'setup') {
-    if (args.mcp || args.skillGenerate || args.json || args.fix || args.report || args.changed != null) {
-      console.error('Error: setup cannot be combined with --mcp, --skill-generate, --json, --fix, --report or --changed.');
+    if (args.mcp || args.skillGenerate || args.json || args.fix || args.report || args.changed != null || args.newFromRev != null || args.secretsBaseline != null || args.writeSecretsBaseline != null || args.only != null || args.skip != null || args.annotations || args.cache || args.cacheLocation != null || args.minScore != null) {
+      console.error('Error: setup cannot be combined with --mcp, --skill-generate, --json, --fix, --report, --changed, --new-from-rev, --secrets-baseline, --write-secrets-baseline, --only, --skip, --annotations, --cache, --cache-location or --min-score.');
       console.error('Run with --help to see the available options.');
       return 2;
     }
@@ -675,7 +1011,7 @@ async function main(argv) {
   // directory is a path, not an unknown command. Anything else that is not
   // a known command still errors below, so a typo stays a typo.
   let resolvedCommand = command;
-  if (!['all', 'context', 'path', 'cache', 'flakes', 'setup', 'completion'].includes(command)) {
+  if (!['all', 'context', 'secrets', 'path', 'cache', 'flakes', 'setup', 'completion'].includes(command)) {
     let isDir = false;
     try { isDir = fs.statSync(path.resolve(command)).isDirectory(); } catch { isDir = false; }
     if (isDir) {
@@ -693,8 +1029,53 @@ async function main(argv) {
     console.error('Run with --help to see the available options.');
     return 2;
   }
+  if (args.newFromRev != null && resolvedCommand !== 'context' && resolvedCommand !== 'all') {
+    console.error('Error: --new-from-rev only applies to context (and all).');
+    console.error('Run with --help to see the available options.');
+    return 2;
+  }
   if (args.report && resolvedCommand !== 'all') {
     console.error('Error: --report only applies to all.');
+    console.error('Run with --help to see the available options.');
+    return 2;
+  }
+  if ((args.only != null || args.skip != null) && resolvedCommand !== 'all') {
+    console.error('Error: --only and --skip only apply to all.');
+    console.error('Run with --help to see the available options.');
+    return 2;
+  }
+  if (args.annotations && resolvedCommand !== 'context' && resolvedCommand !== 'all') {
+    console.error('Error: --annotations only applies to context (and all).');
+    console.error('Run with --help to see the available options.');
+    return 2;
+  }
+  if (args.cache && resolvedCommand !== 'context' && resolvedCommand !== 'all') {
+    console.error('Error: --cache only applies to context (and all).');
+    console.error('Run with --help to see the available options.');
+    return 2;
+  }
+  if (args.minScore != null && resolvedCommand !== 'context' && resolvedCommand !== 'all') {
+    console.error('Error: --min-score only applies to context (and all).');
+    console.error('Run with --help to see the available options.');
+    return 2;
+  }
+  if (args.secretsBaseline != null && resolvedCommand !== 'context' && resolvedCommand !== 'all' && resolvedCommand !== 'secrets') {
+    console.error('Error: --secrets-baseline only applies to context, all and secrets.');
+    console.error('Run with --help to see the available options.');
+    return 2;
+  }
+  if (args.writeSecretsBaseline != null && resolvedCommand !== 'context' && resolvedCommand !== 'secrets') {
+    console.error('Error: --write-secrets-baseline only applies to context and secrets.');
+    console.error('Run with --help to see the available options.');
+    return 2;
+  }
+  if (args.secretsBaseline != null && args.writeSecretsBaseline != null) {
+    console.error('Error: --secrets-baseline and --write-secrets-baseline cannot be combined: one reads a baseline, the other writes one.');
+    console.error('Run with --help to see the available options.');
+    return 2;
+  }
+  if (args.writeSecretsBaseline != null && args.fix) {
+    console.error('Error: --write-secrets-baseline cannot be combined with --fix: record first, then fix and re-record if the findings change.');
     console.error('Run with --help to see the available options.');
     return 2;
   }
@@ -704,22 +1085,54 @@ async function main(argv) {
   try {
     if (resolvedCommand === 'context') {
       const target = args.positional[0];
-      const check = runContextCheck(target, args.changed != null ? { changedRef: args.changed } : {});
+      const check = runContextCheck(target, {
+        ...(args.changed != null ? { changedRef: args.changed, staged: args.staged } : {}),
+        ...(args.newFromRev != null ? { newFromRev: args.newFromRev } : {}),
+        ...(args.secretsBaseline != null ? { secretsBaselinePath: args.secretsBaseline } : {}),
+        ...(args.cache ? { cache: true, cacheLocation: args.cacheLocation } : {}),
+        ...(args.minScore != null ? { minScore: args.minScore } : {}),
+      });
+      warnMissingSecretsBaseline(check);
+      warnScanCache(check);
+      if (args.writeSecretsBaseline) {
+        // Record, don't judge: the scan ran unsuppressed, so every
+        // secret finding is written to the baseline, and the command
+        // exits 0 however noisy the repo is — its job is to record
+        // the current state for review, not to pass it. The recorded
+        // list is printed in full (the report above caps review at
+        // 10), so the decision to commit the baseline is made with
+        // every recorded finding on screen.
+        const secrets = check.result.review.filter((item) => item.kind === 'secret');
+        const written = writeSecretsBaseline(args.writeSecretsBaseline, secrets, { generator: `dev-diagnosis-cli ${VERSION}` });
+        if (args.json) {
+          console.log(JSON.stringify({ ...check.result, secretsBaselineWritten: written }, null, 2));
+        } else {
+          printContext(check.result, false);
+          for (const finding of secrets) console.log(`  recorded: ${finding.path}:${finding.line} (${finding.rule})`);
+          const n = written.count;
+          console.log(`Baseline written to ${written.path} (${n} finding${n === 1 ? '' : 's'}). Review the recorded findings above before committing the baseline — a baselined finding stops alerting.`);
+        }
+        return 0;
+      }
       if (args.fix) {
         if (args.dryRun) {
           // Preview only: nothing is written and nothing is re-scanned,
           // so the verdict and the exit code follow the repo as it
           // stands — the fix has not landed yet.
           if (args.json) {
-            previewContextFix(check);
+            const fix = previewContextFix(check);
             console.log(JSON.stringify(check.result, null, 2));
-            return check.passed ? 0 : 1;
+            printAnnotations(check.result, { json: true, enabled: args.annotations });
+            return check.passed && !fix.wouldChange ? 0 : 1;
           }
           printContext(check.result, false);
-          printFixPreview(previewContextFix(check), check.result.suggestions.length);
+          const fix = previewContextFix(check);
+          printFixPreview(fix, check.result.suggestions.length);
           console.log('Dry run — nothing was written. Re-run without --dry-run to apply the fix.');
+          if (fix.wouldChange) console.log('Would change .aiignore — exiting 1.');
           console.log(verdictLine(check.passed, check.verdict));
-          return check.passed ? 0 : 1;
+          printAnnotations(check.result, { json: false, enabled: args.annotations });
+          return check.passed && !fix.wouldChange ? 0 : 1;
         }
         // A fix command reports the repo as it stands after the fix:
         // re-scan and let the verdict and the exit code follow the
@@ -731,6 +1144,7 @@ async function main(argv) {
         if (args.json) {
           const fixed = applyContextFixAndRescan(check);
           console.log(JSON.stringify(fixed.result, null, 2));
+          printAnnotations(fixed.result, { json: true, enabled: args.annotations });
           return fixed.passed ? 0 : 1;
         }
         printContext(check.result, false);
@@ -738,9 +1152,45 @@ async function main(argv) {
         printFixLine(fixed.result.fix, check.result.suggestions.length);
         console.log(`Re-scanned after fix: Score: ${fixed.result.score}/100 — ${fixed.result.status}`);
         console.log(verdictLine(fixed.passed, fixed.verdict));
+        printAnnotations(fixed.result, { json: false, enabled: args.annotations });
         return fixed.passed ? 0 : 1;
       }
       printContext(check.result, args.json);
+      if (!args.json) console.log(verdictLine(check.passed, check.verdict));
+      printAnnotations(check.result, { json: args.json, enabled: args.annotations });
+      return check.passed ? 0 : 1;
+    }
+    if (resolvedCommand === 'secrets') {
+      if (args.positional.length === 0) {
+        console.error('Error: secrets needs at least one file, for example: dev-diagnosis secrets .git/COMMIT_EDITMSG');
+        console.error('Run with --help to see the available options.');
+        return 2;
+      }
+      const check = runSecretsCheck(args.positional, {
+        ...(args.secretsBaseline != null ? { secretsBaselinePath: args.secretsBaseline } : {}),
+      });
+      warnMissingSecretsBaseline(check);
+      if (args.writeSecretsBaseline) {
+        // Record, don't judge — the same contract as context's write
+        // mode — but refuse to record over unreadable files: a
+        // baseline written from a partial scan would silently bless
+        // the file it could not read.
+        if (check.result.errors.length > 0) {
+          console.error(`Error: cannot write a baseline over unreadable files: ${check.result.errors.map((error) => `${error.file} (${error.reason})`).join(', ')}`);
+          return 1;
+        }
+        const written = writeSecretsBaseline(args.writeSecretsBaseline, check.result.findings, { generator: `dev-diagnosis-cli ${VERSION}` });
+        if (args.json) {
+          console.log(JSON.stringify({ ...check.result, secretsBaselineWritten: written }, null, 2));
+        } else {
+          printSecrets(check.result, false);
+          for (const finding of check.result.findings) console.log(`  recorded: ${finding.path}:${finding.line} (${finding.rule})`);
+          const n = written.count;
+          console.log(`Baseline written to ${written.path} (${n} finding${n === 1 ? '' : 's'}). Review the recorded findings above before committing the baseline — a baselined finding stops alerting.`);
+        }
+        return 0;
+      }
+      printSecrets(check.result, args.json);
       if (!args.json) console.log(verdictLine(check.passed, check.verdict));
       return check.passed ? 0 : 1;
     }
@@ -758,6 +1208,12 @@ async function main(argv) {
       if (!args.json) console.log(verdictLine(check.passed, check.verdict));
       return check.passed ? 0 : 1;
     }
+    if (resolvedCommand === 'binaries') {
+      const check = runBinariesCheck(args.positional[0], { top: args.top });
+      printBinaries(check.result, args.json);
+      if (!args.json) console.log(verdictLine(check.passed, check.verdict));
+      return check.passed ? 0 : 1;
+    }
     if (resolvedCommand === 'cache') {
       const check = runCacheCheck({ buildCommand: args.buildCommand, cacheDir: args.cacheDir, cwd: args.cwd, runs: args.runs });
       printCache(check.result, args.json);
@@ -767,6 +1223,15 @@ async function main(argv) {
     if (resolvedCommand === 'all') {
       const target = args.positional[0];
       const root = target ? path.resolve(target) : process.cwd();
+      // --fix writes the context check's suggestions, so it needs the
+      // context check to run: reject before runAll spends time on a
+      // build the fix can never use.
+      if (args.fix) {
+        const { selected } = selectChecks({ only: args.only, skip: args.skip });
+        if (!selected.includes('context')) {
+          throw new UsageError('--fix writes the context check .aiignore suggestions, so it needs the context check: drop --skip context, or add context to --only.');
+        }
+      }
       const run = runAll({
         root,
         commandName: args.commandName,
@@ -775,15 +1240,27 @@ async function main(argv) {
         cacheDir: args.cacheDir,
         runs: args.runs,
         changedRef: args.changed,
+        staged: args.staged,
+        newFromRev: args.newFromRev,
+        only: args.only,
+        skip: args.skip,
+        ...(args.secretsBaseline != null ? { secretsBaselinePath: args.secretsBaseline } : {}),
+        ...(args.cache ? { cache: true, cacheLocation: args.cacheLocation } : {}),
+        ...(args.minScore != null ? { minScore: args.minScore } : {}),
       });
+      warnMissingSecretsBaseline(run.checks.context);
+      warnScanCache(run.checks.context);
       const contextCheck = run.checks.context;
+      const binariesCheck = run.checks.binaries || null;
       const pathCheck = run.checks.path || null;
       const flakesCheck = run.checks.flakes || null;
       const cacheCheck = run.checks.cache || null;
+      let dryRunWouldChange = false;
 
       if (args.json) {
+        let dryRunFix = null;
         if (args.fix) {
-          if (args.dryRun) previewContextFix(contextCheck);
+          if (args.dryRun) dryRunFix = previewContextFix(contextCheck);
           else {
             run.applyContextFix();
             rescanContext(run);
@@ -796,25 +1273,37 @@ async function main(argv) {
           console.error(`Wrote report to ${path.resolve(args.report)}`);
         }
         console.log(JSON.stringify(allJson(run, args.top), null, 2));
-        return run.overall ? 0 : 1;
+        printAnnotations(run.checks.context?.result, { json: true, enabled: args.annotations });
+        return run.overall && dryRunFix?.wouldChange !== true ? 0 : 1;
       }
 
       console.log(`dev-diagnosis — ${root}`);
-      console.log(section('context'));
-      printContext(contextCheck.result, false);
       let contextVerdict = contextCheck;
-      if (args.fix) {
-        if (args.dryRun) {
-          printFixPreview(previewContextFix(contextCheck), contextCheck.result.suggestions.length);
-          console.log('Dry run — nothing was written. Re-run without --dry-run to apply the fix.');
-        } else {
-          printFixLine(run.applyContextFix(), contextCheck.result.suggestions.length);
-          const fixed = rescanContext(run);
-          console.log(`Re-scanned after fix: Score: ${fixed.result.score}/100 — ${fixed.result.status}`);
-          contextVerdict = fixed;
+      if (contextCheck) {
+        console.log(section('context'));
+        printContext(contextCheck.result, false);
+        if (args.fix) {
+          if (args.dryRun) {
+            const fix = previewContextFix(contextCheck);
+            dryRunWouldChange = fix.wouldChange;
+            printFixPreview(fix, contextCheck.result.suggestions.length);
+            console.log('Dry run — nothing was written. Re-run without --dry-run to apply the fix.');
+            if (fix.wouldChange) console.log('Would change .aiignore — exiting 1.');
+          } else {
+            printFixLine(run.applyContextFix(), contextCheck.result.suggestions.length);
+            const fixed = rescanContext(run);
+            console.log(`Re-scanned after fix: Score: ${fixed.result.score}/100 — ${fixed.result.status}`);
+            contextVerdict = fixed;
+          }
         }
+        console.log(verdictLine(contextVerdict.passed, contextVerdict.verdict));
+        printAnnotations(contextVerdict.result, { json: false, enabled: args.annotations });
       }
-      console.log(verdictLine(contextVerdict.passed, contextVerdict.verdict));
+      if (binariesCheck) {
+        console.log(section('binaries'));
+        if (binariesCheck.result) printBinaries(binariesCheck.result, false);
+        console.log(verdictLine(binariesCheck.passed, binariesCheck.verdict));
+      }
       if (pathCheck) {
         console.log(section('path'));
         printPath(pathCheck.result, false);
@@ -845,7 +1334,7 @@ async function main(argv) {
         if (!writeReportFile(run, args.top, args.report)) return 1;
         console.log(`Wrote report to ${path.resolve(args.report)}`);
       }
-      return run.overall ? 0 : 1;
+      return run.overall && !dryRunWouldChange ? 0 : 1;
     }
     console.error(`Error: unknown command: ${command}`);
     const suggestion = didYouMean(command, KNOWN_COMMANDS);

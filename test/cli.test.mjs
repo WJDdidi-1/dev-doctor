@@ -141,10 +141,10 @@ test('cli: --report with --fix reports the post-fix score', () => {
   assert.match(fs.readFileSync(report, 'utf8'), new RegExp(`Score: ${score}/100`));
 });
 
-test('cli: --help lists all four checks', () => {
+test('cli: --help lists all five checks and the secrets command', () => {
   const result = run(['--help']);
   assert.equal(result.status, 0);
-  for (const word of ['context', 'path', 'cache', 'flakes', 'all', '--fix', '--report']) {
+  for (const word of ['context', 'binaries', 'path', 'cache', 'flakes', 'all', 'secrets', '--fix', '--report']) {
     assert.ok(result.stdout.includes(word), `help should mention ${word}`);
   }
 });
@@ -454,10 +454,10 @@ test('cli: all --json leaves the build stdout out of the cache check', () => {
   assert.ok(!('coldStdout' in parsed.checks.cache) && !('warmStdout' in parsed.checks.cache));
 });
 
-test('cli: all on the demo repo runs all four checks and reports the skips honestly', () => {
+test('cli: all on the demo repo runs all five checks and reports the skips honestly', () => {
   const result = run(['all', freshDemoRepo(), '--command', 'node', '--flakes', demoRuns, '--', 'node', 'build.mjs']);
   assert.equal(result.status, 1);
-  for (const section of ['== context ==', '== path ==', '== flakes ==', '== cache ==']) {
+  for (const section of ['== context ==', '== binaries ==', '== path ==', '== flakes ==', '== cache ==']) {
     assert.ok(result.stdout.includes(section), `all should print ${section}`);
   }
   assert.match(result.stdout, /Overall: FAIL/);
@@ -497,11 +497,23 @@ test('cli: context --fix writes .aiignore and is idempotent', () => {
   assert.equal(fs.readFileSync(path.join(dir, '.aiignore'), 'utf8'), ignore);
 });
 
+test('cli: a nested .aiignore excludes its own subtree', () => {
+  const dir = tempDir('dev-diagnosis-nested-aiignore-');
+  fs.mkdirSync(path.join(dir, 'pkg'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'pkg', 'big.log'), 'x'.repeat(200 * 1024));
+  fs.writeFileSync(path.join(dir, 'pkg', '.aiignore'), 'big.log\n');
+  fs.writeFileSync(path.join(dir, 'src.js'), 'x\n');
+  const result = run(['context', dir]);
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /Score: 100\/100/);
+  assert.match(result.stdout, /PASS  context is clean/);
+});
+
 test('cli: context --fix never writes review suggestions', () => {
   const dir = tempDir('dev-diagnosis-fix-review-');
   fs.mkdirSync(path.join(dir, 'dist'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'dist', 'app.js'), 'bundled\n'.repeat(100));
-  fs.writeFileSync(path.join(dir, 'secret.js'), 'const s = "AKIAIOSFODNN7EXAMPLE";\n');
+  fs.writeFileSync(path.join(dir, 'secret.js'), 'const s = "not-a-real-key";\n');
   fs.mkdirSync(path.join(dir, 'test', 'fixtures', 'lib'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'test', 'fixtures', 'lib', 'secret.js'), 'module.exports = {};\n');
   const first = run(['context', dir, '--fix']);
@@ -534,12 +546,14 @@ test('cli: context --fix --dry-run previews the fix without writing', () => {
   const repo = freshDemoRepo();
   const result = run(['context', repo, '--fix', '--dry-run']);
   // Nothing was fixed, so the pre-fix verdict stands (75/100 on the
-  // demo repo) — the exit code follows the repo as it stands.
+  // demo repo) and the exit code is 1 — the score fails and the fix
+  // would change .aiignore, so either reason alone would fail it.
   assert.equal(result.status, 1);
   assert.match(result.stdout, /Would create \.aiignore with 1 entry \(dry run — nothing was written\):/);
   assert.match(result.stdout, /\+ # \.aiignore — written by/);
   assert.match(result.stdout, /\+ data\/export\.json/);
   assert.match(result.stdout, /Dry run — nothing was written\. Re-run without --dry-run to apply the fix\./);
+  assert.match(result.stdout, /Would change \.aiignore — exiting 1\./);
   assert.doesNotMatch(result.stdout, /Re-scanned after fix/);
   assert.equal(fs.existsSync(path.join(repo, '.aiignore')), false);
   // The preview agrees with the fix: applying it writes exactly the
@@ -549,16 +563,23 @@ test('cli: context --fix --dry-run previews the fix without writing', () => {
   assert.equal(fs.readFileSync(path.join(repo, '.aiignore'), 'utf8'), `${AIIGNORE_HEADER.join('\n')}\ndata/export.json\n`);
   // A second dry run surfaces new suggestions: with the 1.68 MB file
   // gone, the small files are now a big share of the repo and lose
-  // points — the preview lists them, and still writes nothing.
+  // points — the preview lists them, and still writes nothing. The
+  // score is 94/100, so the repo passes — but the fix would still
+  // change .aiignore, so the dry run exits 1 (prettier --check's
+  // rule: the dry run answers "would the fix change anything?").
   const again = run(['context', repo, '--fix', '--dry-run']);
-  assert.equal(again.status, 0); // 94/100 after the first fix
+  assert.equal(again.status, 1);
+  assert.match(again.stdout, /Would change \.aiignore — exiting 1\./);
   assert.match(again.stdout, /Would add 3 entries to \.aiignore/);
   assert.match(again.stdout, /\+ dist\//);
   assert.match(again.stdout, /\+ package-lock\.json/);
   // Regression: the Top 3 share once printed 101.5% — the per-item
   // rounded token counts (25 + 24 + 20 = 69) summed past the total
   // (68). Estimating from the summed bytes keeps the share ≤ 100%.
-  assert.match(again.stdout, /Top 3 noise items: ≈ 68 tokens \(100% of this noise\)/);
+  // The absolute total is platform-dependent (a Windows checkout
+  // adds CRLF bytes, so the same files estimate 69 tokens there),
+  // so only the share is pinned exactly.
+  assert.match(again.stdout, /Top 3 noise items: ≈ \d+ tokens \(100% of this noise\)/);
   assert.equal(fs.readFileSync(path.join(repo, '.aiignore'), 'utf8'), `${AIIGNORE_HEADER.join('\n')}\ndata/export.json\n`);
 });
 
@@ -569,9 +590,69 @@ test('cli: context --json --fix --dry-run reports the preview in the JSON', () =
   const parsed = JSON.parse(result.stdout);
   assert.ok(parsed.score < 85);
   assert.equal(parsed.fix.dryRun, true);
+  assert.equal(parsed.fix.wouldChange, true);
   assert.equal(parsed.fix.created, true);
   assert.deepEqual(parsed.fix.added, ['data/export.json']);
   assert.equal(fs.existsSync(path.join(repo, '.aiignore')), false);
+});
+
+test('cli: context --fix --dry-run exits 1 when the score passes but a fix is pending', () => {
+  // The prettier --check case: one 300 KB log scores 85/100, exactly
+  // on the pass line, so plain `context` exits 0 — but the fix would
+  // still add `*.log` to .aiignore, so the dry run exits 1. Without
+  // this, no CI gate could tell "clean" from "fix pending".
+  const dir = tempDir('dev-diagnosis-dry-run-pass-');
+  fs.writeFileSync(path.join(dir, 'big.log'), 'x'.repeat(300000));
+  const plain = run(['context', dir]);
+  assert.equal(plain.status, 0); // 85/100 passes the threshold
+  const result = run(['context', dir, '--fix', '--dry-run']);
+  assert.equal(result.status, 1);
+  assert.match(result.stdout, /PASS  context is clean/);
+  assert.match(result.stdout, /Would change \.aiignore — exiting 1\./);
+  assert.equal(fs.existsSync(path.join(dir, '.aiignore')), false);
+});
+
+test('cli: context --json --fix --dry-run carries wouldChange', () => {
+  const dir = tempDir('dev-diagnosis-dry-run-json-');
+  fs.writeFileSync(path.join(dir, 'big.log'), 'x'.repeat(300000));
+  const pending = run(['context', dir, '--json', '--fix', '--dry-run']);
+  assert.equal(pending.status, 1);
+  const parsed = JSON.parse(pending.stdout);
+  assert.ok(parsed.score >= 85);
+  assert.equal(parsed.fix.dryRun, true);
+  assert.equal(parsed.fix.wouldChange, true);
+  assert.deepEqual(parsed.fix.added, ['*.log']);
+  // A clean repo: nothing would change, wouldChange is false, exit 0.
+  const clean = tempDir('dev-diagnosis-dry-run-clean-');
+  fs.writeFileSync(path.join(clean, 'a.txt'), 'hello\n');
+  const cleanResult = run(['context', clean, '--json', '--fix', '--dry-run']);
+  assert.equal(cleanResult.status, 0);
+  const cleanParsed = JSON.parse(cleanResult.stdout);
+  assert.equal(cleanParsed.score, 100);
+  assert.equal(cleanParsed.fix.wouldChange, false);
+  assert.deepEqual(cleanParsed.fix.added, []);
+});
+
+test('cli: context --fix --dry-run exits 0 when nothing would change', () => {
+  const dir = tempDir('dev-diagnosis-dry-run-clean-text-');
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'hello\n');
+  const result = run(['context', dir, '--fix', '--dry-run']);
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /Nothing to add to \.aiignore: no suggestions\./);
+  assert.doesNotMatch(result.stdout, /Would change \.aiignore/);
+  assert.equal(fs.existsSync(path.join(dir, '.aiignore')), false);
+});
+
+test('cli: all --fix --dry-run exits 1 when the score passes but a fix is pending', () => {
+  const dir = tempDir('dev-diagnosis-dry-run-all-');
+  fs.writeFileSync(path.join(dir, 'big.log'), 'x'.repeat(300000));
+  const result = run(['all', dir, '--fix', '--dry-run']);
+  assert.equal(result.status, 1);
+  // The checks passed — the exit code is about the pending fix, not
+  // the score, and the line above says so.
+  assert.match(result.stdout, /Overall: PASS/);
+  assert.match(result.stdout, /Would change \.aiignore — exiting 1\./);
+  assert.equal(fs.existsSync(path.join(dir, '.aiignore')), false);
 });
 
 test('cli: --dry-run without --fix (or setup) is a usage error', () => {
@@ -663,12 +744,176 @@ test('cli: all --changed scopes the context section', (t) => {
   assert.doesNotMatch(result.stdout, /old-debug\.log/);
 });
 
+test('cli: --staged without --changed is a usage error', () => {
+  const result = run(['context', demoRepo, '--staged']);
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /--staged only applies with --changed \(context and all\)/);
+});
+
+test('cli: context --changed --staged judges only the staged set', (t) => {
+  if (!hasGit()) t.skip('git is not installed');
+  const repo = makeGitRepo();
+  writeRepoFile(repo, 'src/app.js', 'console.log("clean");\n');
+  writeRepoFile(repo, 'old-debug.log', 'x'.repeat(1200000));
+  gitCommit(repo, 'commit 1: clean app + committed log');
+  writeRepoFile(repo, 'src/feature.js', '// new feature\n');
+  git(repo, 'add', 'src/feature.js'); // staged, clean
+  writeRepoFile(repo, 'unstaged.json', 'y'.repeat(1200000)); // unstaged noise
+  // The working-tree scope fails on noise this commit does not
+  // include — the exact false positive the pre-commit hook used to
+  // hit. The staged scope passes: it judges only what will be
+  // committed.
+  const changed = run(['context', repo, '--changed']);
+  assert.equal(changed.status, 1);
+  assert.match(changed.stdout, /75\/100/);
+  assert.match(changed.stdout, /unstaged\.json/);
+  const staged = run(['context', repo, '--changed', '--staged']);
+  assert.equal(staged.status, 0, staged.stderr);
+  assert.match(staged.stdout, /Files: 1  Size: 15 B  Score: 100\/100/);
+  assert.match(staged.stdout, /Scope: staged files vs HEAD \(1 file\)/);
+  assert.doesNotMatch(staged.stdout, /unstaged\.json/);
+  const json = run(['context', repo, '--json', '--changed', '--staged']);
+  const parsed = JSON.parse(json.stdout);
+  assert.deepEqual(parsed.changed, { ref: 'HEAD', files: ['src/feature.js'], staged: true, newFromRev: null });
+});
+
+test('cli: context --changed --staged --fix only fixes the staged change', (t) => {
+  if (!hasGit()) t.skip('git is not installed');
+  const repo = makeGitRepo();
+  writeRepoFile(repo, 'src/app.js', 'console.log("clean");\n');
+  writeRepoFile(repo, 'old-debug.log', 'x'.repeat(1200000));
+  gitCommit(repo, 'commit 1: clean app + committed log');
+  writeRepoFile(repo, 'staged.json', 'y'.repeat(1200000));
+  git(repo, 'add', 'staged.json'); // staged noise
+  writeRepoFile(repo, 'unstaged.json', 'z'.repeat(1200000)); // unstaged noise
+  const failed = run(['context', repo, '--changed', '--staged']);
+  assert.equal(failed.status, 1);
+  assert.match(failed.stdout, /75\/100/);
+  assert.match(failed.stdout, /staged\.json/);
+  assert.doesNotMatch(failed.stdout, /unstaged\.json/);
+  const fixed = run(['context', repo, '--fix', '--changed', '--staged']);
+  assert.equal(fixed.status, 0, fixed.stderr);
+  assert.match(fixed.stdout, /Created \.aiignore with 1 entry: staged\.json/);
+  assert.match(fixed.stdout, /Re-scanned after fix: Score: 100\/100/);
+  assert.match(fixed.stdout, /Scope: staged files vs HEAD/);
+});
+
+test('cli: all --changed --staged scopes the context section to the staged set', (t) => {
+  if (!hasGit()) t.skip('git is not installed');
+  const repo = makeGitRepo();
+  writeRepoFile(repo, 'src/app.js', 'console.log("clean");\n');
+  writeRepoFile(repo, 'old-debug.log', 'x'.repeat(1200000));
+  gitCommit(repo, 'commit 1: clean app + committed log');
+  writeRepoFile(repo, 'src/feature.js', '// new feature\n');
+  git(repo, 'add', 'src/feature.js');
+  writeRepoFile(repo, 'unstaged.json', 'y'.repeat(1200000));
+  const result = run(['all', repo, '--changed', '--staged']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Scope: staged files vs HEAD \(1 file\)/);
+  assert.doesNotMatch(result.stdout, /unstaged\.json/);
+});
+
+// A committed lockfile the change only touches: --changed blames the
+// whole 2 MB file (the pain that motivated --new-from-rev), while
+// --new-from-rev sees the bump added no new noise and passes.
+function lockfileBumpRepo(t) {
+  if (!hasGit()) t.skip('git is not installed');
+  const repo = makeGitRepo();
+  writeRepoFile(repo, 'src/index.js', 'console.log("clean");\n');
+  writeRepoFile(repo, 'package-lock.json', '{\n  "version": "1.0.1"\n}\n'.padEnd(2000000, ' '));
+  gitCommit(repo, 'commit 1: clean src + committed lockfile');
+  // A dependabot-style bump: the version string changes in place, so
+  // the file is the same size it was at the ref — zero new noise.
+  const lockfile = path.join(repo, 'package-lock.json');
+  fs.writeFileSync(lockfile, fs.readFileSync(lockfile, 'utf8').replace('"1.0.1"', '"1.0.2"'));
+  return repo;
+}
+
+test('cli: context --new-from-rev passes a lockfile bump --changed fails', (t) => {
+  const repo = lockfileBumpRepo(t);
+  const changed = run(['context', repo, '--changed']);
+  assert.equal(changed.status, 1);
+  assert.match(changed.stdout, /80\/100/);
+  assert.match(changed.stdout, /package-lock\.json — lockfile/);
+  const fresh = run(['context', repo, '--changed', '--new-from-rev']);
+  assert.equal(fresh.status, 0, fresh.stderr);
+  assert.match(fresh.stdout, /Score: 100\/100/);
+  assert.match(fresh.stdout, /Scope: new noise in changed files vs HEAD \(1 file\)/);
+  assert.doesNotMatch(fresh.stdout, /package-lock\.json — lockfile/);
+  // A bare --new-from-rev implies --changed: the same verdict with
+  // no --changed on the command line, and --json carries the scope.
+  const bare = run(['context', repo, '--json', '--new-from-rev']);
+  assert.equal(bare.status, 0, bare.stderr);
+  const parsed = JSON.parse(bare.stdout);
+  assert.equal(parsed.score, 100);
+  assert.deepEqual(parsed.changed, { ref: 'HEAD', files: ['package-lock.json'], staged: false, newFromRev: 'HEAD' });
+});
+
+test('cli: context --new-from-rev still fails on genuinely new noise', (t) => {
+  const repo = lockfileBumpRepo(t);
+  // A 10 MB new binary dwarfs the 2 MB lockfile, so the new noise
+  // alone fails the change — the lockfile bump is forgiven, the new
+  // file is not.
+  writeRepoFile(repo, 'data.bin', 'y'.repeat(10 * 1024 * 1024));
+  const result = run(['context', repo, '--changed', '--new-from-rev']);
+  assert.equal(result.status, 1);
+  assert.match(result.stdout, /data\.bin — large file/);
+  assert.doesNotMatch(result.stdout, /package-lock\.json — lockfile/);
+});
+
+test('cli: context --new-from-rev=HEAD~1 with a growth delta reports the delta', (t) => {
+  if (!hasGit()) t.skip('git is not installed');
+  const repo = makeGitRepo();
+  writeRepoFile(repo, 'src/app.js', 'console.log("clean");\n');
+  writeRepoFile(repo, 'package-lock.json', '{\n  "version": "1.0.1"\n}\n'.padEnd(2000000, ' '));
+  gitCommit(repo, 'commit 1: clean src + committed lockfile');
+  fs.appendFileSync(path.join(repo, 'src/app.js'), 'console.log("more");\n');
+  gitCommit(repo, 'commit 2: extend app');
+  // The lockfile grows by exactly 100 KB after HEAD~1.
+  fs.appendFileSync(path.join(repo, 'package-lock.json'), ' '.repeat(100000));
+  const result = run(['context', repo, '--json', '--new-from-rev=HEAD~1']);
+  assert.equal(result.status, 0, result.stderr);
+  const parsed = JSON.parse(result.stdout);
+  assert.equal(parsed.changed.newFromRev, 'HEAD~1');
+  assert.deepEqual(parsed.changed.files, ['package-lock.json', 'src/app.js']);
+  assert.equal(parsed.noise.length, 1);
+  assert.equal(parsed.noise[0].path, 'package-lock.json');
+  assert.equal(parsed.noise[0].bytes, 100000);
+});
+
+test('cli: context --new-from-rev --fix re-scans with the same new-only scope', (t) => {
+  const repo = lockfileBumpRepo(t);
+  // Grow the lockfile by 100 KB so there is new noise to fix.
+  fs.appendFileSync(path.join(repo, 'package-lock.json'), ' '.repeat(100000));
+  const fixed = run(['context', repo, '--fix', '--changed', '--new-from-rev']);
+  assert.equal(fixed.status, 0, fixed.stderr);
+  assert.match(fixed.stdout, /Created \.aiignore with 1 entry: package-lock\.json/);
+  assert.match(fixed.stdout, /Re-scanned after fix: Score: 100\/100/);
+  assert.match(fixed.stdout, /Scope: new noise in changed files vs HEAD/);
+});
+
+test('cli: --new-from-rev with two different refs, with the wrong command, or with no value after = are errors', () => {
+  const conflict = run(['context', demoRepo, '--changed=HEAD~1', '--new-from-rev=HEAD']);
+  assert.equal(conflict.status, 2);
+  assert.match(conflict.stderr, /--new-from-rev HEAD and --changed HEAD~1 name different refs/);
+  const wrongCommand = run(['binaries', demoRepo, '--new-from-rev']);
+  assert.equal(wrongCommand.status, 2);
+  assert.match(wrongCommand.stderr, /--new-from-rev only applies to context \(and all\)/);
+  const noValue = run(['context', demoRepo, '--new-from-rev=']);
+  assert.equal(noValue.status, 2);
+  assert.match(noValue.stderr, /--new-from-rev needs a value after =/);
+  // --staged with --new-from-rev is fine: the flag implies --changed.
+  const staged = run(['context', demoRepo, '--staged', '--new-from-rev']);
+  assert.notEqual(staged.status, 2);
+});
+
 test('cli: all --fix --dry-run previews without writing or re-scanning', () => {
   const repo = freshDemoRepo();
   const result = run(['all', repo, '--fix', '--dry-run']);
   assert.equal(result.status, 1);
   assert.match(result.stdout, /Would create \.aiignore with 1 entry/);
   assert.match(result.stdout, /\+ data\/export\.json/);
+  assert.match(result.stdout, /Would change \.aiignore — exiting 1\./);
   assert.doesNotMatch(result.stdout, /Re-scanned after fix/);
   assert.match(result.stdout, /Overall: FAIL/);
   assert.equal(fs.existsSync(path.join(repo, '.aiignore')), false);
@@ -767,14 +1012,14 @@ test('cli: all prints a summary line with counts, noise and cache saving', () =>
   const result = run(['all', freshDemoRepo(), '--command', 'node', '--flakes', demoRuns, '--', 'node', 'build.mjs']);
   assert.equal(result.status, 1);
   const expectedSize = formatBytes(demoNoiseBytes);
-  assert.match(result.stdout, new RegExp(`Summary: 4 checks — 2 passed, 2 failed, 0 skipped; context noise ${expectedSize.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}; cache saved \\d+%`));
+  assert.match(result.stdout, new RegExp(`Summary: 5 checks — 3 passed, 2 failed, 0 skipped; context noise ${expectedSize.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}; cache saved \\d+%`));
 });
 
 test('cli: all --json includes the summary object', () => {
   const result = run(['all', freshDemoRepo(), '--command', 'node', '--flakes', demoRuns, '--json', '--', 'node', 'build.mjs']);
   assert.equal(result.status, 1);
   const parsed = JSON.parse(result.stdout);
-  assert.deepEqual(parsed.summary.checks, { total: 4, passed: 2, failed: 2, skipped: 0 });
+  assert.deepEqual(parsed.summary.checks, { total: 5, passed: 3, failed: 2, skipped: 0 });
   assert.ok(parsed.summary.contextNoiseBytes > 1000000);
   assert.ok(Number.isInteger(parsed.summary.cacheSavedPct));
 });
@@ -783,7 +1028,7 @@ test('cli: all with skips counts them in the summary', () => {
   const result = run(['all', demoRepo, '--json']);
   assert.equal(result.status, 1);
   const parsed = JSON.parse(result.stdout);
-  assert.deepEqual(parsed.summary.checks, { total: 4, passed: 0, failed: 1, skipped: 3 });
+  assert.deepEqual(parsed.summary.checks, { total: 5, passed: 1, failed: 1, skipped: 3 });
   assert.equal(parsed.summary.cacheSavedPct, null);
 });
 
@@ -805,4 +1050,384 @@ test('cli: --mcp and --skill-generate together is a usage error', () => {
   const result = run(['--mcp', '--skill-generate']);
   assert.equal(result.status, 2);
   assert.match(result.stderr, /cannot be combined/);
+});
+
+// Corpus lines are built from fragments, never written as one literal:
+// this file itself is scanned by the tool's own dogfood run, so a
+// complete fake credential on one line would be a finding in our own
+// repo. The fragments never co-occur on a physical line.
+const baselineKeyLine = ['api', 'key'].join('_') + ' = "' + '9f8e7d6c' + '5b4a3928' + '1706f5e4' + 'd3c2b1a0' + '"';
+const baselineOtherKeyLine = ['api', 'key'].join('_') + ' = "' + '1a2b3c4d' + '5e6f7a8b' + '9c0d1e2f' + '3a4b5c6d' + '"';
+
+function makeSecretRepo() {
+  const dir = tempDir('dev-diagnosis-baseline-cli-');
+  fs.writeFileSync(path.join(dir, 'config.js'), `${baselineKeyLine}\n`);
+  fs.writeFileSync(path.join(dir, 'index.js'), 'x\n');
+  return dir;
+}
+
+test('cli: context --write-secrets-baseline records findings and exits 0', () => {
+  const repo = makeSecretRepo();
+  const result = run(['context', repo, '--write-secrets-baseline', 'baseline.json'], { cwd: repo });
+  assert.equal(result.status, 0, result.stderr);
+  const file = path.join(repo, 'baseline.json');
+  assert.ok(fs.existsSync(file));
+  const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.equal(data.version, 1);
+  assert.equal(data.findings.length, 1);
+  assert.equal(data.findings[0].rule, 'generic-api-key');
+  assert.match(result.stdout, /recorded: config\.js:1 \(generic-api-key\)/);
+  assert.match(result.stdout, /Baseline written to baseline\.json \(1 finding\)/);
+  // The recorded finding stops alerting on the next run.
+  const suppressed = run(['context', repo, '--secrets-baseline', 'baseline.json'], { cwd: repo });
+  assert.equal(suppressed.status, 0, suppressed.stderr);
+  assert.match(suppressed.stdout, /1 secret finding suppressed by baseline baseline\.json/);
+  assert.doesNotMatch(suppressed.stdout, /possible secret/);
+});
+
+test('cli: context --secrets-baseline fails on a new secret', () => {
+  const repo = makeSecretRepo();
+  const wrote = run(['context', repo, '--write-secrets-baseline', 'baseline.json'], { cwd: repo });
+  assert.equal(wrote.status, 0, wrote.stderr);
+  fs.writeFileSync(path.join(repo, 'other.js'), `${baselineOtherKeyLine}\n`);
+  const result = run(['context', repo, '--secrets-baseline', 'baseline.json'], { cwd: repo });
+  assert.equal(result.status, 1);
+  assert.match(result.stdout, /new secret not in the baseline/);
+  assert.match(result.stdout, /possible secret/);
+});
+
+test('cli: context --secrets-baseline with a missing file warns and scans unsuppressed', () => {
+  const repo = makeSecretRepo();
+  const result = run(['context', repo, '--secrets-baseline', 'no-such.json'], { cwd: repo });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stderr, /secrets baseline 'no-such\.json' not found/);
+  assert.match(result.stdout, /possible secret/);
+});
+
+test('cli: --secrets-baseline and --write-secrets-baseline cannot be combined', () => {
+  const result = run(['context', demoRepo, '--secrets-baseline', 'a.json', '--write-secrets-baseline', 'b.json']);
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /cannot be combined/);
+});
+
+test('cli: --write-secrets-baseline needs context or secrets, and refuses --fix', () => {
+  const onAll = run(['all', demoRepo, '--write-secrets-baseline', 'b.json']);
+  assert.equal(onAll.status, 2);
+  assert.match(onAll.stderr, /only applies to context/);
+  const withFix = run(['context', demoRepo, '--write-secrets-baseline', 'b.json', '--fix']);
+  assert.equal(withFix.status, 2);
+  assert.match(withFix.stderr, /cannot be combined with --fix/);
+});
+
+test('cli: --secrets-baseline on path is a usage error', () => {
+  const result = run(['path', 'node', '--secrets-baseline', 'a.json']);
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /only applies to context/);
+});
+
+test('cli: context --fix --json with --secrets-baseline keeps the baseline on the re-scan', () => {
+  const repo = makeSecretRepo();
+  fs.mkdirSync(path.join(repo, 'dist'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'dist', 'bundle.js'), 'x'.repeat(100000));
+  const wrote = run(['context', repo, '--write-secrets-baseline', 'baseline.json'], { cwd: repo });
+  assert.equal(wrote.status, 0, wrote.stderr);
+  const result = run(['context', repo, '--fix', '--json', '--secrets-baseline', 'baseline.json'], { cwd: repo });
+  assert.equal(result.status, 0, result.stderr);
+  const parsed = JSON.parse(result.stdout);
+  assert.equal(parsed.score, 100);
+  // The post-fix re-scan reloaded the same baseline: the triaged
+  // finding is still suppressed, not re-reported.
+  assert.deepEqual(parsed.secretsBaseline, { path: 'baseline.json', loaded: true, suppressed: 1 });
+  assert.equal(parsed.review.filter((item) => item.kind === 'secret').length, 0);
+  assert.ok(fs.existsSync(path.join(repo, '.aiignore')));
+});
+
+test('cli: all --skip cache skips the cache check and never runs the build', () => {
+  // Read-only on the shared fixture: the build command is parsed but
+  // never executed, so no private copy is needed.
+  const result = run(['all', demoRepo, '--command', 'node', '--flakes', demoRuns, '--skip', 'cache', '--', 'node', 'build.mjs']);
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stdout, /cache — skipped by --skip cache/);
+  assert.doesNotMatch(result.stdout, /== cache ==/);
+  assert.match(result.stdout, /Summary: 5 checks — 2 passed, 2 failed, 1 skipped; context noise 1\.68 MB/);
+  assert.doesNotMatch(result.stdout, /cache saved/);
+});
+
+test('cli: all --only context runs only context', () => {
+  const result = run(['all', demoRepo, '--only', 'context']);
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stdout, /binaries — not in --only context/);
+  assert.match(result.stdout, /path — not in --only context/);
+  assert.match(result.stdout, /flakes — not in --only context/);
+  assert.match(result.stdout, /cache — not in --only context/);
+  assert.match(result.stdout, /Summary: 5 checks — 0 passed, 1 failed, 4 skipped; context noise 1\.68 MB/);
+});
+
+test('cli: all --json --only context lists only context in checks', () => {
+  const result = run(['all', demoRepo, '--json', '--only', 'context']);
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  const out = JSON.parse(result.stdout);
+  assert.deepEqual(Object.keys(out.checks), ['context']);
+  assert.deepEqual(out.skipped, [
+    'binaries — not in --only context',
+    'path — not in --only context',
+    'flakes — not in --only context',
+    'cache — not in --only context',
+  ]);
+});
+
+test('cli: --skip accumulates across repeats and accepts the = form', () => {
+  const result = run(['all', demoRepo, '--command', 'node', '--skip=cache', '--skip', 'flakes']);
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stdout, /cache — skipped by --skip cache,flakes/);
+  assert.match(result.stdout, /flakes — skipped by --skip cache,flakes/);
+  assert.match(result.stdout, /Summary: 5 checks — 2 passed, 1 failed, 2 skipped/);
+});
+
+test('cli: --only/--skip misuse is a usage error (exit 2)', () => {
+  const cases = [
+    [['all', demoRepo, '--only', 'bogus'], /unknown check in --only: bogus/],
+    [['all', demoRepo, '--only', 'context', '--skip', 'cache'], /cannot combine --only and --skip/],
+    [['all', demoRepo, '--skip', 'context', '--fix'], /--fix writes the context check .aiignore suggestions, so it needs the context check/],
+    [['context', demoRepo, '--skip', 'cache'], /--only and --skip only apply to all/],
+    [['doctor', '--skip', 'cache'], /doctor takes no options except --json/],
+    [['setup', '--skip', 'cache'], /setup cannot be combined with.*--skip/],
+  ];
+  for (const [args, pattern] of cases) {
+    const result = run(args);
+    assert.equal(result.status, 2, `${args.join(' ')}: ${result.stdout}${result.stderr}`);
+    assert.match(result.stderr, pattern);
+  }
+});
+
+test('cli: all --annotations prints the failing score and the top noise file as workflow commands', () => {
+  const result = run(['all', demoRepo, '--annotations']);
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stdout, /::error title=dev-diagnosis — context score below threshold::context score 75\/100 is below the 85 threshold/);
+  assert.match(result.stdout, /::warning file=data\/export\.json,title=dev-diagnosis — context noise #1 · large file::data\/export\.json — large file \(1\.68 MB, ≈ 439k tokens\)/);
+});
+
+test('cli: context --annotations prints the same lines', () => {
+  const result = run(['context', demoRepo, '--annotations']);
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stdout, /::error title=dev-diagnosis — context score below threshold::/);
+  assert.match(result.stdout, /::warning file=data\/export\.json/);
+});
+
+test('cli: all --json --annotations keeps stdout parseable and puts the lines on stderr', () => {
+  const result = run(['all', demoRepo, '--json', '--annotations']);
+  assert.equal(result.status, 1, result.stderr);
+  JSON.parse(result.stdout); // still valid JSON with no annotation in it
+  assert.doesNotMatch(result.stdout, /::warning/);
+  assert.match(result.stderr, /::error title=dev-diagnosis — context score below threshold::/);
+  assert.match(result.stderr, /::warning file=data\/export\.json/);
+});
+
+test('cli: --annotations only applies to context and all', () => {
+  const cases = [
+    [['path', 'node', '--annotations'], /--annotations only applies to context \(and all\)/],
+    [['doctor', '--annotations'], /doctor takes no options except --json/],
+    [['setup', '--annotations'], /setup cannot be combined with.*--annotations/],
+  ];
+  for (const [args, pattern] of cases) {
+    const result = run(args);
+    assert.equal(result.status, 2, `${args.join(' ')}: ${result.stdout}${result.stderr}`);
+    assert.match(result.stderr, pattern);
+  }
+});
+
+test('cli: all --skip context does not crash on the missing context check', () => {
+  // Regression: warnMissingSecretsBaseline dereferenced
+  // run.checks.context unconditionally, so skipping the context
+  // check crashed the run instead of listing it as skipped.
+  const result = run(['all', demoRepo, '--skip', 'context']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.doesNotMatch(result.stderr, /Cannot read properties/);
+  assert.match(result.stdout, /context — skipped by --skip context/);
+});
+
+test('cli: all --skip context --annotations emits nothing', () => {
+  const result = run(['all', demoRepo, '--skip', 'context', '--annotations']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.doesNotMatch(result.stdout, /::/);
+  assert.doesNotMatch(result.stderr, /::/);
+});
+
+test('cli: context --cache reuses the scan on the second run and the cache file is not scanned', () => {
+  const copy = freshDemoRepo();
+  const first = run(['context', copy, '--cache']);
+  assert.equal(first.status, 1, first.stderr);
+  assert.doesNotMatch(first.stdout, /^Cache: /m);
+  const cacheFile = path.join(copy, '.dev-diagnosis-cache.json');
+  assert.ok(fs.existsSync(cacheFile));
+  const second = run(['context', copy, '--cache']);
+  assert.equal(second.status, 1, second.stderr);
+  assert.match(second.stdout, /^Cache: \d+ files unchanged since \d\d:\d\d \(metadata\)$/m);
+  // The cache file itself never enters the scan: the second run sees
+  // the same file count and the same score as the first, which ran
+  // before the file existed.
+  assert.match(first.stdout, /Score: 75\/100/);
+  assert.match(second.stdout, /Score: 75\/100/);
+});
+
+test('cli: context --json --cache keeps stdout parseable and the two runs agree except cached', () => {
+  const copy = freshDemoRepo();
+  const first = JSON.parse(run(['context', copy, '--json', '--cache']).stdout);
+  assert.equal(first.cached, null);
+  const second = JSON.parse(run(['context', copy, '--json', '--cache']).stdout);
+  assert.ok(second.cached.files > 0);
+  assert.equal(second.cached.strategy, 'metadata');
+  delete first.cached;
+  delete second.cached;
+  assert.deepEqual(second, first);
+});
+
+test('cli: --cache-location needs --cache', () => {
+  const result = run(['context', demoRepo, '--cache-location', 'sub/cache.json']);
+  assert.equal(result.status, 2, result.stderr);
+  assert.match(result.stderr, /--cache-location needs --cache/);
+});
+
+test('cli: --cache only applies to context and all', () => {
+  const cases = [
+    [['path', 'node', '--cache'], /--cache only applies to context \(and all\)/],
+    [['doctor', '--cache'], /doctor takes no options except --json/],
+    [['setup', '--cache'], /setup cannot be combined with.*--cache/],
+    [['flakes', 'examples/runs', '--cache'], /--cache only applies to context \(and all\)/],
+    [['--mcp', '--cache'], /--cache, --cache-location and --min-score only apply to context \(and all\), not to --mcp or --skill-generate/],
+    [['--skill-generate', '--cache'], /--cache, --cache-location and --min-score only apply to context \(and all\), not to --mcp or --skill-generate/],
+  ];
+  for (const [args, pattern] of cases) {
+    const result = run(args);
+    assert.equal(result.status, 2, `${args.join(' ')}: ${result.stdout}${result.stderr}`);
+    assert.match(result.stderr, pattern);
+  }
+});
+
+test('cli: all --cache prints the Cache line on the second run', () => {
+  const copy = freshDemoRepo();
+  run(['all', copy, '--cache']);
+  const second = run(['all', copy, '--cache']);
+  assert.equal(second.status, 1, second.stderr);
+  assert.match(second.stdout, /^Cache: \d+ files unchanged since \d\d:\d\d \(metadata\)$/m);
+});
+
+test('cli: context --fix --cache writes the fix and the cache together', () => {
+  const copy = freshDemoRepo();
+  const result = run(['context', copy, '--fix', '--cache']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(fs.existsSync(path.join(copy, '.aiignore')));
+  assert.ok(fs.existsSync(path.join(copy, '.dev-diagnosis-cache.json')));
+  const second = run(['context', copy, '--cache']);
+  assert.equal(second.status, 0, second.stderr);
+  assert.match(second.stdout, /^Cache: \d+ files unchanged since \d\d:\d\d \(metadata\)$/m);
+});
+
+test('cli: context --json --cache --annotations keeps stdout parseable', () => {
+  const copy = freshDemoRepo();
+  run(['context', copy, '--cache']);
+  const result = run(['context', copy, '--json', '--cache', '--annotations']);
+  assert.equal(result.status, 1, result.stderr);
+  const parsed = JSON.parse(result.stdout);
+  assert.ok(parsed.cached.files > 0);
+  assert.doesNotMatch(result.stdout, /::warning/);
+  assert.match(result.stderr, /::error title=dev-diagnosis — context score below threshold::/);
+});
+
+test('cli: --fix --annotations annotates the post-fix result, not the pre-fix one', () => {
+  const copy = freshDemoRepo();
+  const result = run(['context', copy, '--fix', '--annotations']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.doesNotMatch(result.stdout, /file=data\/export\.json/);
+  assert.match(result.stdout, /::warning file=package-lock\.json/);
+  assert.doesNotMatch(result.stdout, /::error/);
+});
+
+// A repo that scores exactly 85: one 1.2 MB file is 60% of the 2 MB
+// total, so the large-file category loses 25 * 0.6 = 15 points. The
+// probe in the run log verified the score before this test was
+// written; 'x' content keeps the scan secret-free.
+function repoScoring85() {
+  const dir = tempDir('dev-diagnosis-min-score-');
+  writeRepoFile(dir, 'data/export.json', 'x'.repeat(1200000));
+  writeRepoFile(dir, 'src/index.js', 'x'.repeat(800000));
+  return dir;
+}
+
+test('cli: context --min-score moves the bar — 85 passes at 70, fails at 90, and the threshold line names it', () => {
+  const repo85 = repoScoring85();
+  const def = run(['context', repo85]);
+  assert.equal(def.status, 0, def.stderr);
+  assert.match(def.stdout, /Score: 85\/100/);
+  assert.doesNotMatch(def.stdout, /Threshold:/);
+  const strict = run(['context', repo85, '--min-score', '90']);
+  assert.equal(strict.status, 1, strict.stderr);
+  assert.match(strict.stdout, /Threshold: --min-score 90 \(default 85\)/);
+  assert.match(strict.stdout, /FAIL  score 85\/100 is below the --min-score 90 bar/);
+  const lenient = run(['context', repo85, '--min-score=70']);
+  assert.equal(lenient.status, 0, lenient.stderr);
+  assert.match(lenient.stdout, /Threshold: --min-score 70 \(default 85\)/);
+  assert.match(lenient.stdout, /PASS  context is clean/);
+  // The demo repo scores 75: it passes at 70 and fails at 80.
+  assert.equal(run(['context', demoRepo, '--min-score', '70']).status, 0);
+  assert.equal(run(['context', demoRepo, '--min-score', '80']).status, 1);
+});
+
+test('cli: context --json carries minScore, and a bad --min-score is a usage error', () => {
+  const repo85 = repoScoring85();
+  const strict = run(['context', repo85, '--json', '--min-score', '90']);
+  assert.equal(strict.status, 1, strict.stderr);
+  const parsed = JSON.parse(strict.stdout);
+  assert.equal(parsed.score, 85);
+  assert.equal(parsed.minScore, 90);
+  const def = JSON.parse(run(['context', repo85, '--json']).stdout);
+  assert.equal(def.minScore, 85);
+  for (const bad of [['101'], ['abc'], ['85.5'], ['-5'], []]) {
+    const result = run(['context', repo85, '--min-score', ...bad]);
+    assert.equal(result.status, 2, `--min-score ${bad.join(' ')}: ${result.stdout}${result.stderr}`);
+    assert.match(result.stderr, /--min-score needs a whole number from 0 to 100/);
+  }
+  const empty = run(['context', repo85, '--min-score=']);
+  assert.equal(empty.status, 2, empty.stderr);
+  assert.match(empty.stderr, /--min-score needs a whole number from 0 to 100/);
+});
+
+test('cli: --min-score only applies to context and all', () => {
+  const cases = [
+    [['path', 'node', '--min-score', '90'], /--min-score only applies to context \(and all\)/],
+    [['doctor', '--min-score', '90'], /doctor takes no options except --json/],
+    [['setup', '--min-score', '90'], /setup cannot be combined with.*--min-score/],
+    [['flakes', 'examples/runs', '--min-score', '90'], /--min-score only applies to context \(and all\)/],
+    [['binaries', demoRepo, '--min-score', '90'], /--min-score only applies to context \(and all\)/],
+    [['--mcp', '--min-score', '90'], /--cache, --cache-location and --min-score only apply to context \(and all\), not to --mcp or --skill-generate/],
+    [['--skill-generate', '--min-score', '90'], /--cache, --cache-location and --min-score only apply to context \(and all\), not to --mcp or --skill-generate/],
+  ];
+  for (const [args, pattern] of cases) {
+    const result = run(args);
+    assert.equal(result.status, 2, `${args.join(' ')}: ${result.stdout}${result.stderr}`);
+    assert.match(result.stderr, pattern);
+  }
+});
+
+test('cli: all --min-score follows the bar, and context --fix re-scans against it', () => {
+  assert.equal(run(['all', demoRepo, '--min-score', '70']).status, 0);
+  assert.equal(run(['all', demoRepo, '--min-score', '80']).status, 1);
+  const copy = freshDemoRepo();
+  const fixed = run(['context', copy, '--fix', '--min-score', '90']);
+  assert.equal(fixed.status, 0, fixed.stderr);
+  assert.match(fixed.stdout, /Re-scanned after fix: Score: 94\/100/);
+  assert.match(fixed.stdout, /PASS  context is clean/);
+  assert.ok(fs.existsSync(path.join(copy, '.aiignore')));
+});
+
+test('cli: context --fix --dry-run --min-score 70 still exits 1 when the fix would change .aiignore', () => {
+  // The demo repo scores 75, so it passes at 70 — but the fix would
+  // still write entries, and the prettier --check rule says a pending
+  // fix exits 1 even when the score passes.
+  const text = run(['context', demoRepo, '--fix', '--dry-run', '--min-score', '70']);
+  assert.equal(text.status, 1, text.stderr);
+  assert.match(text.stdout, /Would change \.aiignore — exiting 1\./);
+  const json = run(['context', demoRepo, '--fix', '--dry-run', '--min-score', '70', '--json']);
+  assert.equal(json.status, 1, json.stderr);
+  assert.equal(JSON.parse(json.stdout).fix.wouldChange, true);
 });

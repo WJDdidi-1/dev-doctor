@@ -95,7 +95,7 @@ test('completion: bash and zsh scripts pass their shell syntax check', (t) => {
 test('completion: bash completes commands at the first word', () => {
   assert.deepEqual(bashComplete(['dev-diagnosis', 'con'], 1), ['context']);
   assert.deepEqual(bashComplete(['dev-diagnosis', ''], 1).sort(), [
-    'all', 'cache', 'completion', 'context', 'doctor', 'flakes', 'path', 'setup',
+    'all', 'binaries', 'cache', 'completion', 'context', 'doctor', 'flakes', 'path', 'secrets', 'setup',
     ...GLOBAL_OPTIONS,
   ].sort());
 });
@@ -106,15 +106,55 @@ test('completion: bash completes only the options of the command typed', () => {
   assert.ok(contextOpts.includes('--dry-run'));
   assert.ok(contextOpts.includes('--json'));
   assert.ok(contextOpts.includes('--changed'));
+  assert.ok(contextOpts.includes('--staged'), 'context must offer --staged with --changed');
+  assert.ok(contextOpts.includes('--new-from-rev'), 'context must offer --new-from-rev with --changed');
+  assert.ok(contextOpts.includes('--annotations'), 'context must offer --annotations');
+  assert.ok(contextOpts.includes('--cache'), 'context must offer --cache');
+  assert.ok(contextOpts.includes('--cache-location'), 'context must offer --cache-location');
   assert.ok(!contextOpts.includes('--top'), 'context must not offer --top');
   assert.ok(!contextOpts.includes('--check'), 'context must not offer --check');
   const flakesOpts = bashComplete(['dev-diagnosis', 'flakes', '--'], 2);
   assert.ok(flakesOpts.includes('--top'));
   assert.ok(!flakesOpts.includes('--fix'), 'flakes must not offer --fix');
   assert.ok(!flakesOpts.includes('--changed'), 'flakes must not offer --changed');
+  assert.ok(!flakesOpts.includes('--staged'), 'flakes must not offer --staged');
+  assert.ok(!flakesOpts.includes('--new-from-rev'), 'flakes must not offer --new-from-rev');
+  assert.ok(!flakesOpts.includes('--annotations'), 'flakes must not offer --annotations');
+  assert.ok(!flakesOpts.includes('--cache'), 'flakes must not offer --cache');
+  assert.ok(!flakesOpts.includes('--cache-location'), 'flakes must not offer --cache-location');
+  assert.ok(!flakesOpts.includes('--only'), 'flakes must not offer --only');
+  assert.ok(!flakesOpts.includes('--skip'), 'flakes must not offer --skip');
+  const binariesOpts = bashComplete(['dev-diagnosis', 'binaries', '--'], 2);
+  assert.ok(binariesOpts.includes('--top'), 'binaries must offer --top to limit the table');
+  assert.ok(binariesOpts.includes('--json'));
+  assert.ok(!binariesOpts.includes('--fix'), 'binaries must not offer --fix');
+  assert.ok(!binariesOpts.includes('--changed'), 'binaries must not offer --changed');
+  assert.ok(!binariesOpts.includes('--only'), 'binaries must not offer --only');
+  assert.ok(!binariesOpts.includes('--skip'), 'binaries must not offer --skip');
+  assert.ok(!contextOpts.includes('--only'), 'context must not offer --only');
+  assert.ok(!contextOpts.includes('--skip'), 'context must not offer --skip');
   const allOpts = bashComplete(['dev-diagnosis', 'all', '--'], 2);
   assert.ok(allOpts.includes('--changed'));
+  assert.ok(allOpts.includes('--staged'), 'all must offer --staged with --changed');
+  assert.ok(allOpts.includes('--new-from-rev'), 'all must offer --new-from-rev with --changed');
+  assert.ok(allOpts.includes('--annotations'), 'all must offer --annotations');
+  assert.ok(allOpts.includes('--cache'), 'all must offer --cache');
+  assert.ok(allOpts.includes('--cache-location'), 'all must offer --cache-location');
+  assert.ok(allOpts.includes('--only'), 'all must offer --only to select checks');
+  assert.ok(allOpts.includes('--skip'), 'all must offer --skip to select checks');
   assert.ok(allOpts.includes('--report'));
+  const secretsOpts = bashComplete(['dev-diagnosis', 'secrets', '--'], 2);
+  assert.ok(secretsOpts.includes('--json'));
+  assert.ok(secretsOpts.includes('--secrets-baseline'), 'secrets must offer --secrets-baseline');
+  assert.ok(secretsOpts.includes('--write-secrets-baseline'), 'secrets must offer --write-secrets-baseline');
+  assert.ok(!secretsOpts.includes('--fix'), 'secrets must not offer --fix');
+  assert.ok(!secretsOpts.includes('--changed'), 'secrets must not offer --changed');
+  assert.ok(!secretsOpts.includes('--staged'), 'secrets must not offer --staged');
+  assert.ok(!secretsOpts.includes('--annotations'), 'secrets must not offer --annotations');
+  assert.ok(!secretsOpts.includes('--cache'), 'secrets must not offer --cache');
+  assert.ok(!secretsOpts.includes('--cache-location'), 'secrets must not offer --cache-location');
+  assert.ok(!secretsOpts.includes('--only'), 'secrets must not offer --only');
+  assert.ok(!secretsOpts.includes('--skip'), 'secrets must not offer --skip');
   const cacheOpts = bashComplete(['dev-diagnosis', 'cache', '--'], 2);
   assert.ok(cacheOpts.includes('--runs'));
   assert.ok(!cacheOpts.includes('--top'), 'cache must not offer --top');
@@ -122,6 +162,8 @@ test('completion: bash completes only the options of the command typed', () => {
   const globalOpts = bashComplete(['dev-diagnosis', '--'], 1);
   assert.ok(globalOpts.includes('--mcp'));
   assert.ok(globalOpts.includes('--skill-generate'));
+  assert.ok(globalOpts.includes('--only'), 'a bare path means all, so --only applies there too');
+  assert.ok(globalOpts.includes('--skip'), 'a bare path means all, so --skip applies there too');
   assert.ok(!globalOpts.includes('--check'), 'top level must not offer setup-only --check');
 });
 

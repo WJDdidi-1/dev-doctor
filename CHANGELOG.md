@@ -1,6 +1,241 @@
 # Changelog
 
-## Unreleased
+## 0.2.4 — 2026-11-15
+
+- New: a nested `.aiignore` now works — an `.aiignore` in a
+  subdirectory applies to that directory, git's per-directory rule:
+  `pkg/.aiignore` with `big.log` hides `pkg/big.log` and nothing
+  else, so a package can ignore its own generated files without
+  touching the repo-root file. Before this, a nested `.aiignore` was
+  silently ignored (a 200 KB `pkg/big.log` still cost 15 points) while
+  a nested `.gitignore` already worked — a user writing `.aiignore`
+  by gitignore semantics hit a silent trap. The patterns keep their
+  existing meaning (directory `dir/`, basename globs, `/`-anchored
+  paths, relative to the file's own directory); `--fix` still writes
+  only the root `.aiignore`, and a nested `.aiignore` file itself is
+  counted like any other small file. The scan cache fingerprints
+  every `.aiignore` the walk reads (not just the root one), so a rule
+  change at any level forces a full re-scan; a cache file from before
+  this change degrades to one full re-scan and is rewritten in the
+  new shape. The method is git's own per-directory `.gitignore`
+  (gitignore(5)): patterns are read from the file in the same
+  directory as the path, or any parent directory, and match relative
+  to that file's location.
+- New: `context --min-score N` / `all --min-score N` — pass at this
+  context score instead of 85 (a whole number from 0 to 100): a
+  strict team passes at 95, an old repo starts at 70 and raises the
+  bar as it cleans up. The verdict, the exit code, the GitHub
+  annotations and the report all follow the bar, and the result
+  carries it as `minScore`, so `--json` and MCP consumers can read the
+  bar the verdict was judged against; a `--fix` re-scan keeps the same
+  bar instead of silently falling back to 85. The default stays 85, so
+  existing gates, hooks and docs keep meaning what they meant. The
+  method is Biome's `--max-diagnostics` with `--error-on-warnings`
+  (26,105 stars): the threshold is a number the user sets, not a
+  constant baked into the verdict.
+- New: `--fix --dry-run` now exits `1` when the fix would change
+  `.aiignore`, even when the score passes — a repo at 85/100 with a
+  pending `*.log` entry used to exit `0`, so no CI gate could tell
+  "clean" from "fix pending". The preview itself is unchanged (same
+  diff-style listing, nothing written); the dry run now answers
+  "would the fix change anything?", and `--json` / MCP carry the same
+  answer as `fix.wouldChange`. The method is prettier's `--check`
+  (52,413 stars): exit `1` when something would change, because
+  that is what makes a preview usable as a CI gate. No new flag on
+  purpose — the preview already is the check, so a second flag would
+  split one question in two.
+- New: MCP structured output — every tool now declares a loose
+  `outputSchema: { type: 'object' }` in `tools/list`, and a successful
+  `tools/call` returns the same object as `structuredContent`
+  alongside the unchanged text block, so a calling application (the
+  MCP Inspector's Structured Output panel, a host that routes on
+  fields) can read the result typed instead of parsing the text.
+  Error results carry no `structuredContent`. The schema stays loose
+  on purpose: the payloads are dynamic nested objects with optional
+  fields, and the Inspector validates `structuredContent` against
+  `outputSchema` with AJV, so a detailed schema would warn on any
+  property it does not list. The declared protocol version stays
+  `2024-11-05`: the fields are additive and older clients ignore
+  them, the same precedent as annotations. The method is the MCP
+  Inspector's (11,297 stars) structured-output panel.
+- New: `context --new-from-rev[=<ref>]` / `all --new-from-rev[=<ref>]` —
+  report only noise that is new since the ref (default `HEAD`, or
+  `--changed`'s ref when it names one): it implies `--changed`, and a
+  file already noisy at the ref counts only its growth, so touching a
+  2 MB lockfile to bump one version adds no noise, while growing it by
+  100 KB reports exactly those 100 KB. Two different refs
+  (`--changed=X --new-from-rev=Y`) is a usage error: one ref governs
+  both the changed set and the new-noise baseline. A renamed file
+  counts as new (its old path is not traced); review items and secret
+  findings are still reported for every changed file. The ref sizes
+  come from one `git ls-tree` call, so the baseline costs one git
+  invocation however many files changed. The MCP `diagnose_context` /
+  `diagnose_all` tools take the same behaviour as `newFromRev`. The
+  method is golangci-lint's `--new-from-rev`, at file level.
+- New: `context --cache` / `all --cache` — reuse the scan cache for
+  unchanged files (`.dev-diagnosis-cache.json` at the scan root):
+  a second scan of an unchanged tree skips re-reading files whose
+  size and mtime still match, so a 44-second scan of a 53,000-file
+  repo comes back in about 5 seconds (measured on a Node.js checkout:
+  43.9 s fresh, 5.4–6.1 s cached — about 8×, not the 20–40× first
+  predicted: the walk, ignore matching and aggregation still run, only
+  the content reads are skipped). A fully-cached run does not rewrite
+  the cache file: when nothing changed, its bytes and mtime stay as
+  they were. Opt-in, off by default;
+  `--cache-location <file>` moves the cache file. The cache file is
+  plain JSON (fingerprints only — findings carry rule and line, never
+  a value) and is excluded from the scan. A changed `.aiignore` or
+  `.gitignore`, a new tool version or a corrupt cache means a full
+  re-scan; a `--changed` scan only adds or updates entries, never
+  drops the rest. The result says when the cache was used (`cached`
+  in `--json`, one `Cache:` line in the terminal and `--report`), and
+  a cache hit is a fingerprint-verified earlier observation, not a
+  blind spot — cached files are never `unknowns`. The cache is a
+  local performance artifact, not a security boundary: a hand-edited
+  cache file could hide a finding, the same as a hand-edited
+  `.eslintcache` — delete the file to force a fresh scan. CI and the
+  pre-commit hook never use it by default. The method is ESLint's
+  `--cache`, metadata strategy only — hashing would cost the reads
+  the cache exists to avoid. The MCP `diagnose_context` /
+  `diagnose_all` tools take the same behaviour as `cache: true`.
+- New: `all --annotations` / `context --annotations` — also print the
+  top noise items as GitHub Actions workflow commands (`::warning
+  file=...::...`), so they surface on the run's annotations panel
+  without opening the log: no token, no file, no upload. A failing
+  score adds one run-level `::error::`. At most 10 items (the
+  platform's per-level cap); directory rollups are skipped (an
+  annotation needs a file) and secret findings are never annotated.
+  With `--json` the lines go to stderr so stdout stays parseable,
+  and with `--fix` they follow the post-fix re-scan. The Action
+  needs no change — `args: --annotations` passes straight through.
+  The method is golangci-lint's github-actions output format.
+- New: `binaries` check — `dev-diagnosis binaries [path]` (and `all`,
+  plus the MCP `diagnose_binaries` tool) checks up the largest native
+  binaries in a repo (ELF, PE, Mach-O, 16 KB or larger; `.git`,
+  `node_modules` and hidden directories skipped, like the context
+  scan): one hardening table each — PIE, NX, RELRO, stripped, stack
+  protector, fortify, CET/BTI-PAC, RPATH, RUNPATH — plus whole-file
+  entropy. The headers are read with the Node standard library only:
+  no engine, no network, no REA dependency. A value the headers
+  cannot determine is `unknown` with a note saying why (a static
+  binary has no dynamic symbol table, so its stack protector cannot
+  be told from headers), never guessed. This is a checkup, not a
+  security audit: it reports what the headers say, never assesses
+  exploitability, and it always passes — a binary with PIE disabled is
+  a fact, not a failure. `--top N` shows the N largest (default 5,
+  max 20). Verified against REA's ground truth for esbuild 0.25.0:
+  all ten hardening fields and the entropy (6.18 vs REA's 6.1813)
+  agree. The method is REA's no-engine probes, re-implemented.
+- New: `unknowns` in the context report — `all` (terminal, `--json`,
+  `--report`, MCP `diagnose_all`) now reports what the scan does not
+  know: files past the file limit that were never counted, paths that
+  could not be read (including dangling symlinks), and files over
+  1 MB that were not content-scanned for secrets. In `--json` the
+  field is `unknowns` (each entry a kind, a plain detail, and counts)
+  with `visibleFilesPct`, the share of the repo's files the score is
+  based on; the terminal prints an `Unknowns:` list, and the score
+  note now says the exact coverage instead of "totals are a lower
+  bound". An unknown costs no score points — it is a measured blind
+  spot, not a failure — but a 100/100 on a half-scanned repo is not a
+  clean bill for the whole repo, so the report says how much it saw.
+  The method is REA's Evidence/Unknown model: unknown is a
+  first-class answer, not a missing one. (A symlink to a real file is
+  counted as that file now — the agent is handed the target's
+  contents either way — where the walk used to skip every symlink
+  silently.)
+- New: `all --only <checks>` / `all --skip <checks>` — run only the
+  named checks, or every check except the named ones (comma-separated:
+  context, binaries, path, flakes, cache; the two flags cannot be combined).
+  The cache check runs the build twice, so `all --skip cache` is the
+  fast path when the build itself is not under suspicion; checks
+  skipped this way are listed as skipped, so the summary stays honest,
+  and `--fix` refuses to run when context is skipped (it writes the
+  context check's suggestions). The MCP `diagnose_all` tool takes the
+  same selection as `only` / `skip` arrays. The method is
+  super-linter's VALIDATE_ toggles: one list selects the checks, the
+  rest are skipped.
+- New: `secrets` command — `dev-diagnosis secrets <file>...` scans
+  named files for secrets only (the same credential shapes the
+  context check looks for), prints file + rule + line, never the
+  value, and exits 1 when one is found. It is the command the new
+  `dev-diagnosis-commit-msg` pre-commit hook runs on the commit
+  message file: a key pasted into a commit message is committed to
+  history, and the context hook can never see it, because the message
+  is not a file in the tree. The method is commitlint's: the message
+  arrives as a file path after it exists (`--edit $1`), so the check
+  takes the file, not the repo. `--secrets-baseline` /
+  `--write-secrets-baseline` work the same way as on `context`, and
+  the MCP server gains a `diagnose_secrets` tool (`paths`,
+  `secretsBaseline`, `writeSecretsBaseline`).
+- New: secrets baseline — `context --secrets-baseline <file>` (and
+  `all`, plus `secretsBaseline` on the MCP `diagnose_context` /
+  `diagnose_all` tools) reads a baseline file of triaged findings and
+  suppresses them, so a known false positive stops re-alerting on
+  every run; `context --write-secrets-baseline <file>` records the
+  current findings into one (it prints every finding it records, so
+  the decision to commit the file is made with the list on screen).
+  The file holds SHA-256 fingerprints (rule + matched value), never
+  values, so it is safe to commit; matching is by fingerprint alone,
+  so a triaged secret stays suppressed when it moves files. Once a
+  baseline exists, a secret finding it does not cover fails the check
+  even when the score passes — that is what lets the pre-commit hook
+  block a new secret without failing forever on a known one (add the
+  flag to your own `.pre-commit-config.yaml` args; a missing file
+  warns and scans unsuppressed). The method is detect-secrets':
+  baseline, audit, fail-only-on-new — not git-secrets' `.gitallowed`
+  pattern file, whose hand-written regexes can over-match and
+  silently allow a real secret.
+- Fix: the generic secret rule hung the scan on minified files — its
+  pattern started with a greedy variable-name prefix, so one 800-char
+  line cost 4 ms and a 500 KB single line stalled the scan for over
+  two minutes. The pattern now starts at the keyword, so a 1 MB line
+  costs under 1 ms and a 3,000-file / 2.4 MB tree scans in ~100 ms;
+  detection is unchanged (`my_api_key` and `config.apiKey` still
+  match, with the same captured value), pinned by a 1 MB single-line
+  regression test.
+
+- New: content-level secret scan in `context` (and `all`, same
+  section) — files up to 1 MB are read for credential shapes (AWS
+  access keys, GitHub tokens, private keys, Slack tokens, and
+  high-entropy values assigned to a key-like name), because the
+  filename check could not see a key inside an innocuous file. A
+  finding is an advisory `review` item (file + rule + line, never the
+  matched value, `verified: false` in `--json`): it costs no score
+  points and `--fix` never writes it. The method is gitleaks'
+  (rules are data, findings carry a rule id and a line) with
+  TruffleHog's verified/unverified labelling, minus the live check —
+  this tool is offline, so nothing is ever sent to a provider.
+  Fix: the generic rule's entropy bar was 3.9, but a real random
+  32-hex key measures 3.3–3.9 (median 3.6), so genuine keys slipped
+  through; the bar is now 3.0 — the same hex limit detect-secrets
+  uses — with a regression test that generates 20 random keys and
+  requires all of them to be found. Dogfooding the lower bar caught a
+  false positive of its own (a dotted property chain assigned to a
+  secret-named variable), so the generic value no longer matches dots:
+  a JWT is still found via its first segment, and the trap corpus grew
+  from 12 to 14 lines.
+  Template files, lockfiles, binary files and files over 1 MB are
+  skipped; environment references (`process.env.X`,
+  `${{ secrets.X }}`) and the AWS documentation example key are
+  not findings. Corpus tests pin 5/5 true positives and 12
+  false-positive traps silent; both repos dogfood 0 findings at
+  100/100; a 3,000-file / 2.4 MB tree scans in ~100 ms (it was
+  249 ms before the generic rule's pattern was fixed to start at the
+  keyword — a minified single line used to stall the scan).
+
+- New: `context --changed --staged` (and `all --staged`, plus `staged`
+  on the MCP `diagnose_context` / `diagnose_all` tools) — the scan
+  covers only the files staged in the index vs the ref
+  (`git diff --cached`), so the verdict judges exactly what will be
+  committed. The pre-commit hook now runs with it: an unstaged noisy
+  file no longer blocks a commit that does not include it, and an
+  untracked file is judged once it is `git add`ed. The method is
+  lint-staged's (14,761★): run against the files staged in Git.
+  `--staged` without `--changed` is a usage error, and `--fix` with
+  `--changed --staged` re-scans the staged set afterwards. Tests pin
+  the staged set (staged clean + unstaged noise + untracked noise),
+  the hook command passing on unstaged noise and failing on staged
+  noise, the MCP wire shape, and the `Scope: staged files` line.
 
 - New: dev-diagnosis is now a pre-commit hook — this repo ships a
   `.pre-commit-hooks.yaml`, so users add it to their
@@ -21,8 +256,23 @@
   exit 1 at 75/100, the documented fix clears it to exit 0, a clean
   change passes. Honest limits: the hook only becomes usable once a
   tagged release carries the manifest; it needs pre-commit and
-  Node.js 18+; `--changed` diffs the working tree against HEAD, so
-  unstaged noise blocks the commit too.
+  Node.js 18+; the hook runs `--changed --staged`, so it judges only
+  the staged set — plain `--changed` still diffs the working tree
+  against HEAD, unstaged noise included.
+
+- New: one-command version bumps — `node scripts/bump-version.mjs
+  <version>` moves every version pin at once (package.json,
+  package-lock.json, server.json, the marketplace metadata, the
+  pre-commit manifest's pinned dependency and documented rev, the
+  README rev, the demo tape's GIF label), renames the CHANGELOG's
+  `## Unreleased` heading to the new version, and refuses a drifted
+  tree before writing anything instead of half-bumping it. The method
+  is semantic-release's (one mechanical writer of version strings),
+  without adopting semantic-release itself. The demo tape test no
+  longer hardcodes the version either — it reads the expected GIF
+  label from package.json, so the test file is not a ninth version
+  mention. After bumping, re-render the demo GIF (`npm run demo`):
+  the tape label changed, so the GIF is stale until then.
 
 ## 0.2.3 — 2026-11-14
 
@@ -39,6 +289,17 @@
   The SKILL.md validator now accepts CRLF line endings, and
   `.gitattributes` pins `skills/*/SKILL.md` to LF so a Windows
   checkout cannot break the byte-identical marketplace test.
+  A second Windows-only round followed (the first fix left 4
+  Windows failures): the demo tape no longer spawns a `.cmd` shim
+  (spawnSync of it returns EINVAL on Windows) — scenes now run with
+  node directly against this checkout's bin — and the tape's
+  byte-derived clean-scene lines (Size, tokens, noise bytes) are
+  pinned by prefix, since a Windows checkout adds CRLF bytes; the
+  `--fix --dry-run` test pins only the Top 3 share (100%), not the
+  platform-dependent token total; and the `doctor --json` test
+  expects 2 warnings on Windows (the home check also warns there).
+  Local tests 251/251 (247 on the release tree, which excludes the
+  pre-commit hook deferred to 0.2.4).
 
 - New: the MCP server now serves a prompt, `diagnose_repo`
   (`prompts/list` / `prompts/get`, advertised in `initialize`): the

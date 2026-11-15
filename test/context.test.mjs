@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { tempDir } from '../scripts/support.mjs';
-import { AIIGNORE_HEADER, applyAiignore, classifyPath, isGitignored, matchesAiignore, parseGitignore, planAiignore, scanDirectory, topNoiseDirectories } from '../lib/context.mjs';
+import { AIIGNORE_HEADER, applyAiignore, classifyPath, isAiignored, isGitignored, matchesAiignore, parseGitignore, planAiignore, scanDirectory, topNoiseDirectories } from '../lib/context.mjs';
 
 function makeRepo(files) {
   const root = tempDir('dev-diagnosis-context-');
@@ -181,7 +181,7 @@ test('scanDirectory: review suggestions are advisory, never --fix suggestions', 
   // hide every same-named file in the repo — including the harmless
   // test fixture — while fixing nothing about the score.
   const root = makeRepo({
-    'secret.js': 'const s = "AKIAIOSFODNN7EXAMPLE";\n',
+    'secret.js': 'const s = "not-a-real-key";\n',
     'test/fixtures/lib/secret.js': 'module.exports = {};\n',
     '.env': 'KEY=value\n',
     'dist/app.js': 'bundled\n'.repeat(100),
@@ -338,6 +338,59 @@ test('scanDirectory: files listed in .aiignore are excluded from the scan', () =
   assert.equal(result.noise.length, 0);
   assert.equal(result.files, 1); // only src/index.js: .aiignore itself is the tool's own file, not counted
   assert.deepEqual(result.suggestions, []);
+});
+
+test('isAiignored: patterns are scoped to the directory of their .aiignore', () => {
+  const stack = [
+    { base: '', patterns: ['root-only.log'] },
+    { base: 'pkg', patterns: ['big.log', 'dist/'] },
+  ];
+  // A nested pattern ignores its own subtree and nothing else.
+  assert.equal(isAiignored('pkg/big.log', stack), true);
+  assert.equal(isAiignored('other/big.log', stack), false);
+  // A root pattern still reaches into subdirectories (basename match).
+  assert.equal(isAiignored('root-only.log', stack), true);
+  assert.equal(isAiignored('pkg/root-only.log', stack), true);
+  // A directory pattern prunes the subtree, and only that subtree.
+  assert.equal(isAiignored('pkg/dist/bundle.js', stack), true);
+  assert.equal(isAiignored('pkg/dist', stack), true);
+  assert.equal(isAiignored('other/dist/bundle.js', stack), false);
+  // A rule cannot ignore its own directory.
+  assert.equal(isAiignored('pkg', stack), false);
+  // A slash pattern is relative to the .aiignore's directory.
+  const slashed = [{ base: 'pkg', patterns: ['sub/*.log'] }];
+  assert.equal(isAiignored('pkg/sub/x.log', slashed), true);
+  assert.equal(isAiignored('pkg/x.log', slashed), false);
+});
+
+test('scanDirectory: a nested .aiignore excludes only its own subtree', () => {
+  const root = makeRepo({
+    'src/index.js': 'x\n',
+    'pkg/big.log': 'x'.repeat(200 * 1024),
+    'pkg/.aiignore': 'big.log\n',
+    'other/big.log': 'x'.repeat(200 * 1024),
+  });
+  const result = scanDirectory(root);
+  // One 200 KB log remains: the nested file hides pkg/big.log, and
+  // the pattern does not leak into the sibling directory.
+  assert.equal(result.score, 85);
+  assert.deepEqual(result.noise.map((item) => item.path), ['other/big.log']);
+  // The nested .aiignore is user-written config, so it is counted —
+  // only the root .aiignore is the tool's own file. The ignored
+  // pkg/big.log is not counted at all.
+  assert.equal(result.files, 3);
+});
+
+test('scanDirectory: a nested .aiignore directory pattern prunes the subtree', () => {
+  const root = makeRepo({
+    'src/index.js': 'x\n',
+    'pkg/dist/bundle.js': 'x'.repeat(2 * 1024 * 1024),
+    'pkg/.aiignore': 'dist/\n',
+  });
+  const result = scanDirectory(root);
+  assert.equal(result.score, 100);
+  assert.equal(result.noise.length, 0);
+  assert.equal(result.files, 2); // src/index.js + pkg/.aiignore; the bundle is excluded
 });
 
 test('scanDirectory: .git and node_modules are skipped', () => {
@@ -577,7 +630,18 @@ test('scanDirectory: a changed scope scans only the changed files', () => {
   assert.equal(result.bytes, 1200000);
   assert.equal(result.noise.length, 1);
   assert.equal(result.noise[0].path, 'logs/new-debug.log');
-  assert.deepEqual(result.changed, { ref: 'HEAD', files: ['logs/new-debug.log'] });
+  assert.deepEqual(result.changed, { ref: 'HEAD', files: ['logs/new-debug.log'], staged: false, newFromRev: null });
+});
+
+test('scanDirectory: a staged scope echoes staged: true in the result', () => {
+  const root = makeRepo({
+    'old-debug.log': 'x'.repeat(1200000),
+    'logs/new-debug.log': 'x'.repeat(1200000),
+    'src/app.js': 'x\n',
+  });
+  const result = scanDirectory(root, { changed: { ref: 'HEAD', files: ['logs/new-debug.log'], staged: true } });
+  assert.equal(result.files, 1);
+  assert.deepEqual(result.changed, { ref: 'HEAD', files: ['logs/new-debug.log'], staged: true, newFromRev: null });
 });
 
 test('scanDirectory: a changed scope with no changed files scores clean', () => {
@@ -590,7 +654,7 @@ test('scanDirectory: a changed scope with no changed files scores clean', () => 
   assert.equal(result.bytes, 0);
   assert.equal(result.score, 100);
   assert.deepEqual(result.noise, []);
-  assert.deepEqual(result.changed, { ref: 'HEAD', files: [] });
+  assert.deepEqual(result.changed, { ref: 'HEAD', files: [], staged: false, newFromRev: null });
 });
 
 test('scanDirectory: a changed file the walk excludes still drops out', () => {
@@ -603,5 +667,92 @@ test('scanDirectory: a changed file the walk excludes still drops out', () => {
   // that .gitignore now covers, for example — and the scoped scan
   // still sees nothing: the walk's exclusions win over the list.
   assert.equal(result.files, 0);
+  assert.equal(result.score, 100);
+});
+
+test('scanDirectory: new-from-rev drops noise that already existed at the ref', () => {
+  const root = makeRepo({
+    'package-lock.json': 'x'.repeat(2000000),
+    'src/app.js': 'x\n',
+  });
+  // The lockfile was already 2 MB at the ref; touching it — a version
+  // bump that changes no bytes — adds no new noise, so the change
+  // scores clean even though the file itself is noisy.
+  const result = scanDirectory(root, {
+    changed: { ref: 'HEAD', files: ['package-lock.json'] },
+    newFromRev: { ref: 'HEAD', sizes: new Map([['package-lock.json', 2000000]]) },
+  });
+  assert.equal(result.files, 1);
+  assert.equal(result.bytes, 2000000);
+  assert.equal(result.score, 100);
+  assert.deepEqual(result.noise, []);
+  assert.deepEqual(result.changed, { ref: 'HEAD', files: ['package-lock.json'], staged: false, newFromRev: 'HEAD' });
+});
+
+test('scanDirectory: new-from-rev counts only the growth of an already-noisy file', () => {
+  const root = makeRepo({
+    'package-lock.json': 'x'.repeat(2100000),
+    'src/app.js': 'x\n',
+  });
+  // The lockfile grew by exactly 100 KB since the ref: the noise item
+  // carries the delta, not the file, and the score is the delta's —
+  // 20 lockfile points on 100 KB of 2.1 MB total is one point lost.
+  const result = scanDirectory(root, {
+    changed: { ref: 'HEAD', files: ['package-lock.json'] },
+    newFromRev: { ref: 'HEAD', sizes: new Map([['package-lock.json', 2000000]]) },
+  });
+  assert.equal(result.noise.length, 1);
+  assert.equal(result.noise[0].path, 'package-lock.json');
+  assert.equal(result.noise[0].bytes, 100000);
+  assert.equal(result.score, 99);
+});
+
+test('scanDirectory: new-from-rev counts a file the ref never had in full', () => {
+  const root = makeRepo({
+    'logs/new-debug.log': 'x'.repeat(1200000),
+    'src/app.js': 'x\n',
+  });
+  // The ref has no entry for the new log: it is all new noise, and
+  // the whole file counts, not a delta against nothing.
+  const result = scanDirectory(root, {
+    changed: { ref: 'HEAD', files: ['logs/new-debug.log'] },
+    newFromRev: { ref: 'HEAD', sizes: new Map() },
+  });
+  assert.equal(result.noise.length, 1);
+  assert.equal(result.noise[0].path, 'logs/new-debug.log');
+  assert.equal(result.noise[0].bytes, 1200000);
+});
+
+test('scanDirectory: new-from-rev counts the whole file when its noise category changed', () => {
+  const root = makeRepo({
+    'data.bin': 'x'.repeat(1200000),
+    'src/app.js': 'x\n',
+  });
+  // At the ref the file was 900 KB: under the 1 MB line, not noise at
+  // all. Now it is 1.2 MB, a large file — the category changed, so the
+  // delta against the ref would understate it: the whole file is new
+  // noise, not just the 300 KB over the line.
+  const result = scanDirectory(root, {
+    changed: { ref: 'HEAD', files: ['data.bin'] },
+    newFromRev: { ref: 'HEAD', sizes: new Map([['data.bin', 900000]]) },
+  });
+  assert.equal(result.noise.length, 1);
+  assert.equal(result.noise[0].path, 'data.bin');
+  assert.equal(result.noise[0].bytes, 1200000);
+  assert.ok(result.score < 85, 'the whole large file fails the change');
+});
+
+test('scanDirectory: new-from-rev drops a noisy file that shrank since the ref', () => {
+  const root = makeRepo({
+    'big.log': 'x'.repeat(1100000),
+    'src/app.js': 'x\n',
+  });
+  // The log is still over 1 MB, but it was 1.2 MB at the ref and is
+  // smaller now: the change removed noise, so nothing is reported.
+  const result = scanDirectory(root, {
+    changed: { ref: 'HEAD', files: ['big.log'] },
+    newFromRev: { ref: 'HEAD', sizes: new Map([['big.log', 1200000]]) },
+  });
+  assert.equal(result.noise.length, 0);
   assert.equal(result.score, 100);
 });

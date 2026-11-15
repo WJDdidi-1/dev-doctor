@@ -6,15 +6,18 @@
 # output, in order; the full matched line is what the GIF shows. That is
 # the drift guard: when the CLI's output format changes, --check fails
 # until the tape is updated and the GIF re-rendered. Lines with timings
-# (cache) are pinned by prefix only — the numbers vary run to run.
-# `Run` is the command typed and run: a `dev-diagnosis` shim on PATH
-# points at this checkout's bin, so the typed command is the real one.
+# (cache) are pinned by prefix only — the numbers vary run to run. The
+# same applies to byte-derived numbers in the clean scene (Size, tokens,
+# noise bytes): a Windows checkout adds CRLF bytes, so those lines are
+# pinned by prefix and the GIF keeps the numbers from the render machine.
+# `Run` is the command typed and shown: the scenes run it with node
+# against this checkout's bin, so the typed command is the real one.
 # `Cwd` is relative to the staged copy of examples/ (default: stage root).
 # Scenes run in order against one staged fixture, so the fix in scene 2
 # is what scene 3 re-runs against. The method is VHS's (charmbracelet/vhs):
 # the demo is code, re-runnable, and CI keeps it up to date.
 
-Label v0.2.3
+Label v0.2.4
 Output docs/demo.gif
 
 Title "Your AI agent just read" "≈ 439k tokens of garbage." "one command finds it — one fix clears it"
@@ -30,7 +33,7 @@ Show runs: 2  tests: 5  flaky: 1  always-failing: 1
 Show == cache ==
 Show Cold:
 Show Overall: FAIL
-Show Summary: 4 checks — 2 passed, 2 failed, 0 skipped; context noise 1.68 MB; cache saved
+Show Summary: 5 checks — 3 passed, 2 failed, 0 skipped; context noise 1.68 MB; cache saved
 
 Scene fix
 Run dev-diagnosis context examples/demo-repo --fix
@@ -44,9 +47,9 @@ Show PASS  context is clean
 Scene clean
 Run dev-diagnosis all
 Cwd examples/demo-repo
-Show Files: 8  Size: 1.14 KB  Score: 94/100
-Show Estimated tokens wasted on this noise: ≈ 68 tokens
+Show Files: 8  Size:
+Show Estimated tokens wasted on this noise:
 Show Overall: PASS
-Show Summary: 4 checks — 1 passed, 0 failed, 3 skipped; context noise 272 B
+Show Summary: 5 checks — 2 passed, 0 failed, 3 skipped;
 
 End "npx dev-diagnosis-cli" "github.com/WJDdidi-1/dev-doctor"

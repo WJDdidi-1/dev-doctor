@@ -197,7 +197,10 @@ test('doctor: --json is machine-readable', () => {
   assert.deepEqual(parsed.checks.map((check) => check.id), ['node', 'command', 'home', 'skill', 'mcp', 'aiignore']);
   assert.equal(parsed.passed, false);
   assert.equal(parsed.failed, 1);
-  assert.equal(parsed.warnings, 1);
+  // On Windows the home check also warns ($HOME disagrees with
+  // os.homedir(), which reads the profile), so there are 2 warnings;
+  // on POSIX only the missing skill warns.
+  assert.equal(parsed.warnings, process.platform === 'win32' ? 2 : 1);
   for (const check of parsed.checks) {
     assert.ok(['ok', 'warn', 'fail'].includes(check.status));
     assert.equal(typeof check.detail, 'string');

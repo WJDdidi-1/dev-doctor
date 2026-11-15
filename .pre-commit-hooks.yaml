@@ -1,0 +1,47 @@
+# dev-diagnosis as a pre-commit hook (pre-commit.com framework).
+# Users add this to their own .pre-commit-config.yaml:
+#   - repo: https://github.com/WJDdidi-1/dev-doctor
+#     rev: v0.2.4
+#     hooks:
+#       - id: dev-diagnosis
+#       - id: dev-diagnosis-commit-msg
+#
+# The first hook runs `dev-diagnosis context --changed --staged`: it scores
+# only the files staged for this commit and fails the commit when the
+# staged change's score drops below 85 — the same threshold as the
+# context check. --staged (lint-staged's method: judge the staged set)
+# means the verdict is exactly about what will be committed: an
+# unstaged noisy file no longer blocks the commit, and an untracked
+# file is judged once it is `git add`ed. It never writes anything: on
+# failure it prints the noise and the fix, and the user runs
+# `dev-diagnosis context --fix --changed --staged` and re-commits.
+# The hook needs pre-commit and Node.js 18+.
+#
+# The second hook runs on the commit-msg stage, which the first hook
+# can never cover: a secret pasted into the commit message is not a
+# file in the tree, and the message only exists after it is written —
+# so the context check has nothing to scan. pre-commit passes the
+# message file to the hook (commitlint's `--edit $1` contract: the
+# message arrives as a file path), and the hook runs
+# `dev-diagnosis secrets` on it, failing the commit when the message
+# contains a possible secret. The finding is a file, a rule and a
+# line — the value is never printed, and a secret the baseline
+# already covers does not block the commit (pass --secrets-baseline
+# in the hook's args, as for the context hook, to use one).
+- id: dev-diagnosis
+  name: dev-diagnosis
+  description: Fail the commit when the change adds AI-agent context noise
+  entry: dev-diagnosis
+  language: node
+  additional_dependencies: ['dev-diagnosis-cli@0.2.4']
+  args: [context, --changed, --staged]
+  pass_filenames: false
+- id: dev-diagnosis-commit-msg
+  name: dev-diagnosis-commit-msg
+  description: Fail the commit when the commit message contains a possible secret
+  entry: dev-diagnosis
+  language: node
+  additional_dependencies: ['dev-diagnosis-cli@0.2.4']
+  args: [secrets]
+  stages: [commit-msg]
+  pass_filenames: true
