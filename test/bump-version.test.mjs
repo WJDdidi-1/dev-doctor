@@ -36,6 +36,10 @@ function writeFixture(dir, { withExtras = true, withUnreleased = true, readmeRev
   fs.writeFileSync(path.join(dir, '.claude-plugin', 'marketplace.json'), JSON.stringify({
     metadata: { version: OLD },
   }, null, 2));
+  fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({
+    name: pkg.name.replace('-cli', ''), version: OLD,
+    server: { entry_point: 'bin/x.js' },
+  }, null, 2));
   if (withExtras) {
     fs.writeFileSync(path.join(dir, '.pre-commit-hooks.yaml'),
       `#     rev: v${OLD}\n- id: x\n  additional_dependencies: ['${pkg.name}@${OLD}']\n`);
@@ -71,6 +75,7 @@ test('bump-version: moves every version mention and renames Unreleased', () => {
   assert.equal(server.version, NEW);
   assert.equal(server.packages[0].version, NEW);
   assert.equal(readJson(dir, '.claude-plugin/marketplace.json').metadata.version, NEW);
+  assert.equal(readJson(dir, 'manifest.json').version, NEW);
   const manifest = fs.readFileSync(path.join(dir, '.pre-commit-hooks.yaml'), 'utf8');
   assert.ok(manifest.includes(`${pkg.name}@${NEW}`));
   assert.ok(manifest.includes(`rev: v${NEW}`));
@@ -91,6 +96,7 @@ test('bump-version: works without the optional files (the other repo\'s shape)',
   assert.equal(readJson(dir, 'package.json').version, NEW);
   assert.equal(readJson(dir, 'server.json').version, NEW);
   assert.equal(readJson(dir, '.claude-plugin/marketplace.json').metadata.version, NEW);
+  assert.equal(readJson(dir, 'manifest.json').version, NEW);
   assert.ok(fs.readFileSync(path.join(dir, 'CHANGELOG.md'), 'utf8').includes(`## ${NEW} — ${DATE}`));
 });
 

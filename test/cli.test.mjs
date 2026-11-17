@@ -109,6 +109,34 @@ test('cli: all --report --json keeps stdout parseable and notes the report on st
   assert.match(fs.readFileSync(report, 'utf8'), /^# dev-diagnosis report$/m);
 });
 
+test('cli: all writes the Step Summary when GITHUB_STEP_SUMMARY is set, without changing the exit code', () => {
+  const dir = tempDir('dev-diagnosis-summary-');
+  const summary = path.join(dir, 'summary.md');
+  const result = run(['all', demoRepo], { env: { ...process.env, GITHUB_STEP_SUMMARY: summary } });
+  assert.equal(result.status, 1); // the demo repo still FAILs; the summary does not change the exit code
+  const md = fs.readFileSync(summary, 'utf8');
+  assert.match(md, /^# dev-diagnosis report$/m);
+  assert.match(md, /^Overall: FAIL — /m);
+  assert.match(md, /data\/export\.json/);
+});
+
+test('cli: all --json writes the Step Summary too, and stdout stays parseable', () => {
+  const dir = tempDir('dev-diagnosis-summary-');
+  const summary = path.join(dir, 'summary.md');
+  const result = run(['all', demoRepo, '--json'], { env: { ...process.env, GITHUB_STEP_SUMMARY: summary } });
+  assert.equal(result.status, 1);
+  JSON.parse(result.stdout); // still valid JSON with no summary line in it
+  assert.match(fs.readFileSync(summary, 'utf8'), /^# dev-diagnosis report$/m);
+});
+
+test('cli: all with an unwritable Step Summary warns and keeps the verdict exit code', () => {
+  const dir = tempDir('dev-diagnosis-summary-');
+  const summary = path.join(dir, 'no-such-dir', 'summary.md');
+  const result = run(['all', demoRepo], { env: { ...process.env, GITHUB_STEP_SUMMARY: summary } });
+  assert.equal(result.status, 1); // the demo repo FAILs; the unwritable summary does not add a failure
+  assert.match(result.stderr, /Warning: could not write the step summary/);
+});
+
 test('cli: --report without a value is a usage error', () => {
   const result = run(['all', demoRepo, '--report']);
   assert.equal(result.status, 2);
@@ -149,6 +177,32 @@ test('cli: --help lists all five checks and the secrets command', () => {
   }
 });
 
+test('cli: --help ends with copy-pasteable examples', () => {
+  const result = run(['--help']);
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /Examples:\n  dev-diagnosis {2,}run every check on this repo/);
+  for (const line of ['dev-diagnosis context --fix', 'dev-diagnosis all --changed --staged', 'dev-diagnosis doctor']) {
+    assert.ok(result.stdout.includes(line), `help examples should include ${line}`);
+  }
+});
+
+test('cli: context names unused .aiignore entries without failing', () => {
+  const dir = tempDir('dev-diagnosis-unused-aiignore-');
+  fs.writeFileSync(path.join(dir, 'src.js'), 'x\n');
+  fs.writeFileSync(path.join(dir, 'work.tmp'), 'x\n');
+  fs.writeFileSync(path.join(dir, '.aiignore'), 'deleted-file.log\n*.tmp\n');
+  const result = run(['context', dir]);
+  // Advisory only: the score stays 100 and the exit code stays 0 —
+  // a dead entry is housekeeping, not a failure.
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /Score: 100\/100/);
+  assert.match(result.stdout, /Unused \.aiignore entry \(1\) — matches nothing in this repo; safe to remove:/);
+  assert.match(result.stdout, /deleted-file\.log  \(\.aiignore\)/);
+  const json = run(['context', dir, '--json']);
+  assert.equal(json.status, 0);
+  assert.deepEqual(JSON.parse(json.stdout).unusedAiignore, [{ file: '.aiignore', pattern: 'deleted-file.log' }]);
+});
+
 test('cli: --version prints the package version', () => {
   const result = run(['--version']);
   assert.equal(result.status, 0);
@@ -179,6 +233,24 @@ test('cli: a mistyped option suggests the intended option', () => {
   const equals = run(['context', '--comand=node']);
   assert.equal(equals.status, 2);
   assert.match(equals.stderr, /Did you mean '--command'\?/);
+});
+
+test('cli: a flag-shaped subcommand suggests the subcommand', () => {
+  const contex = run(['--contex']);
+  assert.equal(contex.status, 2);
+  assert.match(contex.stderr, /unknown option: --contex/);
+  assert.match(contex.stderr, /Did you mean 'context'\?/);
+  // The exact command name, typed as a flag, suggests too.
+  const all = run(['--all']);
+  assert.equal(all.status, 2);
+  assert.match(all.stderr, /Did you mean 'all'\?/);
+  // An option typo still wins over a command near-miss.
+  const json = run(['--jsonn']);
+  assert.match(json.stderr, /Did you mean '--json'\?/);
+  // After a command was parsed, a flag-shaped command is noise.
+  const after = run(['context', '--contex']);
+  assert.equal(after.status, 2);
+  assert.doesNotMatch(after.stderr, /Did you mean/);
 });
 
 test('cli: a far-off typo gets no suggestion', () => {
@@ -533,6 +605,31 @@ test('cli: context --fix never writes review suggestions', () => {
   assert.match(second.stdout, /test\/fixtures\/lib\/secret\.js — environment-like file/);
 });
 
+test('cli: context terminal says how many review items it truncated', () => {
+  // The terminal prints the first 10 review items; it used to drop
+  // the rest silently, so a long review list read as a short one —
+  // the report already said "… and N more", the terminal did not.
+  // Eleven files with distinct keys (built at runtime, never written
+  // as literals, so this file stays clean under dogfood).
+  const dir = tempDir('dev-diagnosis-review-cap-');
+  let seed = 20261117;
+  const rand = () => {
+    seed |= 0; seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  for (let i = 0; i < 11; i += 1) {
+    let key = '';
+    for (let j = 0; j < 32; j += 1) key += Math.floor(rand() * 16).toString(16);
+    fs.writeFileSync(path.join(dir, `file${String(i).padStart(2, '0')}.js`), `api_key = "${key}"\n`);
+  }
+  const result = run(['context', dir]);
+  assert.equal(result.status, 0); // secrets are advisory, the score is 100
+  assert.match(result.stdout, /Worth a look before sharing:/);
+  assert.match(result.stdout, /… and 1 more/);
+});
+
 test('cli: context --json --fix reports the fix in the JSON', () => {
   const dir = tempDir('dev-diagnosis-fix-json-');
   fs.mkdirSync(path.join(dir, 'dist'), { recursive: true });
@@ -801,6 +898,38 @@ test('cli: context --changed --staged --fix only fixes the staged change', (t) =
   assert.match(fixed.stdout, /Scope: staged files vs HEAD/);
 });
 
+test('cli: context --changed works on the first commit — unborn HEAD is not an error', (t) => {
+  if (!hasGit()) t.skip('git is not installed');
+  const repo = makeGitRepo(); // no commits yet — HEAD is unborn
+  writeRepoFile(repo, 'src/feature.js', '// new feature\n');
+  git(repo, 'add', 'src/feature.js'); // staged, clean
+  // A clean first commit passes with a verdict, not the old
+  // "cannot list changes vs HEAD" error — this is the commit the
+  // pre-commit hook runs on, so it has to work here.
+  const clean = run(['context', repo, '--changed', '--staged']);
+  assert.equal(clean.status, 0, clean.stderr);
+  assert.match(clean.stdout, /Files: 1  Size: 15 B  Score: 100\/100/);
+  assert.match(clean.stdout, /Scope: staged files vs HEAD \(1 file\)/);
+  assert.doesNotMatch(clean.stdout, /cannot list changes/);
+  // A noisy first commit fails with the verdict, not an error — and
+  // --new-from-rev treats every file as new, since nothing was ever
+  // committed.
+  writeRepoFile(repo, 'staged.json', 'y'.repeat(1200000));
+  git(repo, 'add', 'staged.json'); // staged noise
+  const failed = run(['context', repo, '--changed', '--staged']);
+  assert.equal(failed.status, 1);
+  assert.match(failed.stdout, /75\/100/);
+  assert.match(failed.stdout, /staged\.json/);
+  assert.doesNotMatch(failed.stdout, /cannot list changes/);
+  const fresh = run(['context', repo, '--new-from-rev']);
+  assert.equal(fresh.status, 1);
+  assert.match(fresh.stdout, /75\/100/);
+  // An explicit ref that does not exist still fails loudly.
+  const bad = run(['context', repo, '--changed=no-such-ref']);
+  assert.equal(bad.status, 1);
+  assert.match(bad.stderr, /cannot list changes vs no-such-ref/);
+});
+
 test('cli: all --changed --staged scopes the context section to the staged set', (t) => {
   if (!hasGit()) t.skip('git is not installed');
   const repo = makeGitRepo();
@@ -882,6 +1011,12 @@ test('cli: context --new-from-rev=HEAD~1 with a growth delta reports the delta',
   assert.equal(parsed.noise.length, 1);
   assert.equal(parsed.noise[0].path, 'package-lock.json');
   assert.equal(parsed.noise[0].bytes, 100000);
+  assert.equal(parsed.noise[0].totalBytes, 2100000);
+  // The terminal line names the growth against the file it grew from,
+  // not the file as a 97 KB one: delta's "show exactly what changed".
+  const text = run(['context', repo, '--new-from-rev=HEAD~1']);
+  assert.equal(text.status, 0, text.stderr);
+  assert.match(text.stdout, /package-lock\.json — lockfile \(97.7 KB of 2\.00 MB, ≈ 25k tokens\)/);
 });
 
 test('cli: context --new-from-rev --fix re-scans with the same new-only scope', (t) => {
@@ -1038,7 +1173,7 @@ test('cli: all with skips counts them in the summary', () => {
 test('cli: --help lists --mcp, --sandbox and --skill-generate', () => {
   const result = run(['--help']);
   assert.equal(result.status, 0);
-  for (const word of ['--mcp', '--sandbox', '--root', '--skill-generate', '--global', '--project']) {
+  for (const word of ['--mcp', '--sandbox', '--root', '--read-only', '--skill-generate', '--global', '--project']) {
     assert.ok(result.stdout.includes(word), `help should mention ${word}`);
   }
 });
@@ -1047,6 +1182,12 @@ test('cli: --sandbox without --mcp is a usage error', () => {
   const result = run(['--sandbox', demoRepo]);
   assert.equal(result.status, 2);
   assert.match(result.stderr, /--sandbox\/--root only applies to --mcp/);
+});
+
+test('cli: --read-only without --mcp is a usage error', () => {
+  const result = run(['--read-only']);
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /--read-only only applies to --mcp/);
 });
 
 test('cli: --mcp and --skill-generate together is a usage error', () => {
@@ -1433,4 +1574,14 @@ test('cli: context --fix --dry-run --min-score 70 still exits 1 when the fix wou
   const json = run(['context', demoRepo, '--fix', '--dry-run', '--min-score', '70', '--json']);
   assert.equal(json.status, 1, json.stderr);
   assert.equal(JSON.parse(json.stdout).fix.wouldChange, true);
+});
+
+test('cli: the README states no test count — counts rot every round', () => {
+  // The Contributing block once said "436 tests" while the suite was
+  // already 466. A count in the README goes stale the next round
+  // that adds a test, and the suite prints its own count on every
+  // run — so the README carries no number to go stale.
+  const readme = readFileSync(path.join(root, 'README.md'), 'utf8');
+  assert.doesNotMatch(readme, /\d+ tests, run serially/);
+  assert.match(readme, /npm test\s+# node:test, no extra dependencies, run serially/);
 });

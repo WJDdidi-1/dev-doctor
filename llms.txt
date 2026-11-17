@@ -36,12 +36,13 @@ checks, context noise found, and cache savings.
 
 ## Let an agent run it
 
-- `dev-diagnosis setup` wires the tool into Claude Code, Codex CLI, Cursor
-  and VS Code (preview first, never overwrites existing config).
-- `dev-diagnosis --mcp` serves the same four checks as MCP tools over stdio
-  (`diagnose_context`, `diagnose_path`, `diagnose_cache`, `diagnose_flakes`,
-  `diagnose_all`) plus `diagnose_secrets` for scanning named files;
-  add `--sandbox <dir>` to keep it inside one repo.
+- `dev-diagnosis setup` wires the tool into Claude Code, Codex CLI, Cursor,
+  Gemini CLI and VS Code (preview first, never overwrites existing config).
+- `dev-diagnosis --mcp` serves the checks as seven MCP tools over stdio
+  (`diagnose_context`, `diagnose_binaries`, `diagnose_path`,
+  `diagnose_cache`, `diagnose_flakes`, `diagnose_all`,
+  `diagnose_secrets`); add `--sandbox <dir>` to keep it inside one repo,
+  `--read-only` to serve only the read-only ones.
 - `dev-diagnosis --skill-generate` writes a SKILL.md telling an agent to run
   `dev-diagnosis all` when it starts work in a repo, fix what FAILs, and
   re-run to confirm. It never overwrites an existing SKILL.md.

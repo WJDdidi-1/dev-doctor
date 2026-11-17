@@ -156,3 +156,44 @@ test('refFileSizes: not a git repo, and an unknown ref, throw a plain error', (t
     (error) => /cannot list files at no-such-ref: fatal: Not a valid object name no-such-ref/.test(error.message),
   );
 });
+
+test('changed: unborn HEAD reads as the empty tree — the first commit is a change, not an error', (t) => {
+  if (!hasGit()) t.skip('git is not installed');
+  const repo = makeGitRepo(); // no commits yet — HEAD is unborn
+  writeRepoFile(repo, 'src/feature.js', '// new feature\n');
+  git(repo, 'add', 'src/feature.js'); // staged
+  writeRepoFile(repo, 'notes.json', 'y'.repeat(1200000)); // untracked noise
+  // The working-tree scope sees both; the staged scope only the file
+  // that will be committed — and neither errors on the missing HEAD.
+  const changed = listChangedFiles(repo);
+  assert.equal(changed.ref, 'HEAD');
+  assert.deepEqual(changed.files, ['notes.json', 'src/feature.js']);
+  const staged = listChangedFiles(repo, 'HEAD', { staged: true });
+  assert.equal(staged.ref, 'HEAD');
+  assert.equal(staged.staged, true);
+  assert.deepEqual(staged.files, ['src/feature.js']);
+});
+
+test('changed: an explicit unknown ref still throws on an unborn HEAD', (t) => {
+  if (!hasGit()) t.skip('git is not installed');
+  const repo = makeGitRepo();
+  writeRepoFile(repo, 'src/feature.js', '// new feature\n');
+  assert.throws(
+    () => listChangedFiles(repo, 'no-such-ref'),
+    (error) => /cannot list changes vs no-such-ref: fatal: ambiguous argument/.test(error.message),
+  );
+});
+
+test('refFileSizes: unborn HEAD is an empty tree — every file is new', (t) => {
+  if (!hasGit()) t.skip('git is not installed');
+  const repo = makeGitRepo();
+  writeRepoFile(repo, 'src/feature.js', '// new feature\n');
+  git(repo, 'add', 'src/feature.js');
+  const sizes = refFileSizes(repo);
+  assert.equal(sizes.size, 0);
+  assert.equal(sizes.has('src/feature.js'), false);
+  assert.throws(
+    () => refFileSizes(repo, 'no-such-ref'),
+    (error) => /cannot list files at no-such-ref: fatal: Not a valid object name no-such-ref/.test(error.message),
+  );
+});

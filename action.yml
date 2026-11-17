@@ -3,7 +3,9 @@
 # Runs `dev-diagnosis all` on the checked-out repo and fails the job
 # when a check fails, so a noisy repo, a flaky test or a cache that
 # costs more than it saves blocks the merge instead of silently
-# piling up. It runs the published npm package (@latest, so a repo
+# piling up. The same report also lands in the run's Step Summary, so
+# the score and the noise list are on the run page without opening the
+# log. It runs the published npm package (@latest, so a repo
 # using this action always gets the newest checks), not the checkout:
 # nothing in the action needs the repo's own code.
 #

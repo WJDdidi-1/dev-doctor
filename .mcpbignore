@@ -1,0 +1,17 @@
+# Files the .mcpb bundle does not need at runtime: the server only
+# reads bin/, lib/, package.json (its own version) and manifest.json.
+# Tests, CI, docs, examples and the GitHub Action / pre-commit /
+# marketplace metadata all stay in the repo, out of the bundle.
+test/
+.github/
+scripts/
+examples/
+docs/
+skills/
+.claude-plugin/
+server.json
+action.yml
+.pre-commit-hooks.yaml
+.gitattributes
+.aiignore
+*.tgz

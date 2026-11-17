@@ -30,6 +30,14 @@ test('annotations: one noise file is one warning line', () => {
   );
 });
 
+test('annotations: a grown file names the growth against its total size', () => {
+  const text = formatContextAnnotations({
+    score: 93,
+    noise: [item({ bytes: 100000, tokens: 25000, totalBytes: 2100000 })],
+  });
+  assert.match(text, /data\/export\.json — large file \(97.7 KB of 2\.00 MB, ≈ 25k tokens\)/);
+});
+
 test('annotations: a failing score adds one run-level error line first', () => {
   const text = formatContextAnnotations({ score: 75, noise: [item()] });
   const lines = text.split('\n');

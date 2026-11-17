@@ -14,9 +14,11 @@
     "bin/",
     "lib/",
     "examples/",
+    "docs/demo.gif",
     "README.md",
     "LICENSE",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "llms.txt"
   ],
   "homepage": "https://github.com/WJDdidi-1/dev-doctor#readme",
   "keywords": [
@@ -51,5 +53,5 @@
     "test": "node --test --test-concurrency=1"
   },
   "type": "module",
-  "version": "0.2.4"
+  "version": "0.2.5"
 }

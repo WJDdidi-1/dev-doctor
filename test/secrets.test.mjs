@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { tempDir } from '../scripts/support.mjs';
 import { scanDirectory } from '../lib/context.mjs';
-import { scanFileForSecrets, scanTextForSecrets, shannonEntropy } from '../lib/secrets.mjs';
+import { deduplicateSecretFindings, scanFileForSecrets, scanTextForSecrets, shannonEntropy } from '../lib/secrets.mjs';
 
 // Corpus lines are built from fragments, never written as one literal:
 // this file itself is scanned by the tool's own dogfood run, so a
@@ -102,7 +103,7 @@ test('secrets: all five true positives are found, with rule and line', () => {
   assert.ok(!dumped.includes('9f8e7d6c5b4a3928'), dumped);
 });
 
-test('secrets: the fourteen false-positive traps stay silent', () => {
+test('secrets: the false-positive traps stay silent', () => {
   const traps = [
     // The AWS documentation's own example key.
     'AKIA' + 'IOSFODNN7EXAMPLE',
@@ -130,10 +131,99 @@ test('secrets: the fourteen false-positive traps stay silent', () => {
     // file after the entropy bar dropped to 3.0.)
     'const secrets = result.review.filter((item) => item.rule === \'aws-access-key\');',
     'apiKey = configuration.settings.primary',
+    // A function call assigned to a secret-named variable is a
+    // reference, not a credential: the 27-character function name
+    // clears the entropy bar on its own. (Dogfood caught the first
+    // one on prettier's type-annotation printer.)
+    'const token = getTypeAnnotationFirstToken(path);',
+    'apiKey = fetchApiKeyFromVault();',
+    // A bare identifier assigned to a secret-named variable in a
+    // code file is a variable, not a credential: a real credential
+    // in code is a string literal. (The round-91 residual.)
+    'token = previouslyFetchedTokenValue',
+    'api_key = some_long_identifier_name',
   ];
   for (const line of traps) {
     assert.deepEqual(scanTextForSecrets(line, 'x.js'), [], line);
   }
+});
+
+test('secrets: a bare identifier in code is a variable, not a credential', () => {
+  // The exclusion is code files only, and only when the value is
+  // unquoted: a bare value in an env file IS a credential, and a
+  // quoted string in code is a literal. The lines are built from
+  // fragments, like the corpus above, so this file stays clean under
+  // the tool's own dogfood scan.
+  const identifier = 'previously' + 'FetchedTokenValue';
+  const line = `token = ${identifier}`;
+  assert.deepEqual(scanTextForSecrets(line, 'src/auth.js'), []);
+  assert.deepEqual(scanTextForSecrets(line, 'src/auth.py'), []);
+  assert.deepEqual(scanTextForSecrets(line, 'src/auth.TS'), []);
+  // The same bare value in an env file is a credential.
+  const envFindings = scanTextForSecrets(`TOKEN=${identifier}`, '.env');
+  assert.equal(envFindings.length, 1);
+  assert.equal(envFindings[0].rule, 'generic-api-key');
+  // The same bare value in a shell script is a credential too.
+  const shellFindings = scanTextForSecrets(`export TOKEN=${identifier}`, 'deploy.sh');
+  assert.equal(shellFindings.length, 1);
+  // A quoted string in code is a literal and still flags.
+  const quoted = scanTextForSecrets(`token = "${identifier}"`, 'src/auth.js');
+  assert.equal(quoted.length, 1);
+  assert.equal(quoted[0].rule, 'generic-api-key');
+  // A bare hex literal in code is not an identifier (it starts with
+  // a digit) and still flags.
+  const hex = scanTextForSecrets(`api_key = ${'9f8e7d6c5b4a39281706f5e4d3c2b1a0'}`, 'src/auth.js');
+  assert.equal(hex.length, 1);
+  assert.equal(hex[0].rule, 'generic-api-key');
+  // So does one that starts with a letter: a 32-character all-hex
+  // value is a key, not a variable name — no real identifier is 20
+  // hex characters. (This caught a regression in the first draft of
+  // the exclusion: one of the twenty random keys starts with a
+  // letter and went silent.)
+  const letterHex = scanTextForSecrets(
+    `apiKey = ${'abcdef' + '1234567890' + 'abcdef1234567890'}`,
+    'src/auth.js',
+  );
+  assert.equal(letterHex.length, 1);
+  assert.equal(letterHex[0].rule, 'generic-api-key');
+});
+
+test('secrets: the same credential in many files is one finding', () => {
+  // Dogfooding on Biome found 2,050 findings that were 41 distinct
+  // secrets — the same test token snapshotted 433 times. The review
+  // list groups by fingerprint: the first occurrence is kept, with
+  // how many places the secret appears.
+  const first = scanTextForSecrets(genericKeyLine, 'a.js');
+  const second = scanTextForSecrets(genericKeyLine, 'b.js');
+  const other = scanTextForSecrets(otherKeyLine, 'c.js');
+  const filenameItem = { label: 'secret.js', reason: 'secret-like file' };
+  const grouped = deduplicateSecretFindings([...first, ...second, ...other, filenameItem]);
+  assert.equal(grouped.length, 3);
+  assert.equal(grouped[0].occurrences, 2);
+  assert.equal(grouped[0].path, 'a.js');
+  assert.match(grouped[0].reason, /also in 1 more place/);
+  assert.equal(grouped[1].occurrences, 1);
+  assert.match(grouped[1].reason, /unverified/);
+  assert.ok(!grouped[1].reason.includes('also in'));
+  // A filename review item has no fingerprint and passes through
+  // untouched, in order.
+  assert.equal(grouped[2], filenameItem);
+  // An empty list stays empty.
+  assert.deepEqual(deduplicateSecretFindings([]), []);
+});
+
+test('secrets: scanDirectory groups the same credential across files', () => {
+  const root = makeRepo({
+    'a.js': `${genericKeyLine}\n`,
+    'b.js': `${genericKeyLine}\n`,
+    'c.js': `${genericKeyLine}\n`,
+  });
+  const result = scanDirectory(root);
+  const secrets = result.review.filter((item) => item.kind === 'secret');
+  assert.equal(secrets.length, 1);
+  assert.equal(secrets[0].occurrences, 3);
+  assert.match(secrets[0].reason, /also in 2 more places/);
+  assert.equal(secrets[0].path, 'a.js');
 });
 
 test('secrets: a JWT assigned to a token variable is still found', () => {
@@ -206,10 +296,53 @@ test('secrets: a minified single-line file does not stall the scan', () => {
   assert.ok(Date.now() - start < 1000, `took ${Date.now() - start} ms`);
 });
 
+test('secrets: the literal prefilter skips marker-free text, never a real match', () => {
+  // ripgrep's method: the regexes only run where a literal candidate
+  // exists. A file with no marker cannot match any rule, so it returns
+  // [] without the line split — and a 1 MB marker-free blob costs one
+  // lowercasing pass, not a per-line regex run over a megabyte.
+  const start = Date.now();
+  assert.deepEqual(scanTextForSecrets('x'.repeat(1024 * 1024), 'bundle.min.js'), []);
+  assert.deepEqual(scanTextForSecrets('const greeting = "hello world";\n// compute the total\n', 'app.js'), []);
+  assert.ok(Date.now() - start < 1000, `took ${Date.now() - start} ms`);
+  // Passing the prefilter is not a finding: these lines carry a marker
+  // but no rule matches them, and the real matcher still says so.
+  assert.deepEqual(scanTextForSecrets('const tokenizer = createTokenizer();', 'lex.js'), []);
+  assert.deepEqual(scanTextForSecrets('-----begin rsa private key-----', 'id_rsa'), []);
+  assert.deepEqual(scanTextForSecrets('password = "test123"', 'config.js'), []);
+  // The prefilter lowercases, so an uppercase assignment still reaches
+  // the case-insensitive generic rule (the old 3.9-bar lesson: casing
+  // must never decide detection).
+  const upper = ['API', 'KEY'].join('_') + ' = "' + '9f8e7d6c' + '5b4a3928' + '1706f5e4' + 'd3c2b1a0' + '"';
+  const found = scanTextForSecrets(upper, 'config.js');
+  assert.equal(found.length, 1);
+  assert.equal(found[0].rule, 'generic-api-key');
+});
+
 test('secrets: one finding per line, the most specific rule winning', () => {
   // A GitHub token on an assignment line also matches the generic
   // keyword rule; only the provider rule reports it.
   const findings = scanTextForSecrets(`GITHUB_TOKEN=${githubToken}`, 'ci.yml');
   assert.equal(findings.length, 1);
   assert.equal(findings[0].rule, 'github-token');
+});
+
+test('secrets: lib/secrets.mjs imports standalone, without lib/context.mjs first', () => {
+  // Regression (2026-11-17): secrets.mjs imported LOCKFILES and
+  // isTemplateFile from context.mjs while context.mjs imported
+  // SECRET_RULES from secrets.mjs, so importing secrets.mjs on its
+  // own crashed with "Cannot access 'SECRET_RULES' before
+  // initialization" — context.mjs builds RULE_LABELS at module top
+  // level while SECRET_RULES was still in its temporal dead zone.
+  // The shared facts now live in the leaf module lib/filekinds.mjs,
+  // which imports nothing, so the cycle is gone. A fresh process
+  // importing only secrets.mjs must succeed.
+  const secretsPath = new URL('../lib/secrets.mjs', import.meta.url).pathname;
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e',
+    `import(${JSON.stringify(secretsPath)}).then((m) => {`
+    + ` if (m.SECRET_RULES.length !== 5) process.exit(2);`
+    + ` if (typeof m.scanTextForSecrets !== 'function') process.exit(3);`
+    + `}).catch(() => process.exit(1));`],
+  { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
 });

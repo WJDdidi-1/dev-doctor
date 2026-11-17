@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { runAll } from '../lib/checks.mjs';
-import { formatReportMarkdown, formatTokens } from '../lib/report.mjs';
+import { formatReportMarkdown, formatTokens, writeStepSummary } from '../lib/report.mjs';
+import { tempDir } from '../scripts/support.mjs';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const demoRepo = path.join(root, 'examples', 'demo-repo');
@@ -72,6 +74,17 @@ test('report: the context section names a new-from-rev scope as new noise', () =
   assert.match(md, /^Scope: new noise in changed files vs HEAD \(1 file\)$/m);
   run.checks.context.result.changed = { ref: 'HEAD', files: ['data/export.json'], staged: true, newFromRev: 'HEAD' };
   assert.match(formatReportMarkdown(run), /^Scope: new noise in staged files vs HEAD \(1 file\)$/m);
+});
+
+test('report: a grown noise item shows the growth against its total size', () => {
+  const run = runAll({ root: demoRepo });
+  const noise = run.checks.context.result.noise[0];
+  noise.totalBytes = 2100000;
+  const md = formatReportMarkdown(run);
+  assert.match(
+    md,
+    new RegExp(`\\| ${escapeRegExp(noise.label)} \\| ${escapeRegExp(noise.reason)} \\| .* of 2\\.00 MB \\| ≈ ${formatTokens(noise.tokens)} \\|`),
+  );
 });
 
 test('report: the context section reports suppressed secrets and a missing baseline', () => {
@@ -178,6 +191,19 @@ test('report: the directory rollup renders when the noise spans directories', ()
   assert.match(md, /^- \(root\) — ≈ 100 tokens \(20% of this noise\)$/m);
 });
 
+test('report: unused .aiignore entries render, and stay out when there are none', () => {
+  const run = syntheticRun(2);
+  run.checks.context.result.unusedAiignore = [
+    { file: '.aiignore', pattern: 'deleted-file.log' },
+    { file: 'pkg/.aiignore', pattern: 'stale.log' },
+  ];
+  const md = formatReportMarkdown(run);
+  assert.match(md, /^Unused \.aiignore entries \(2\) — match nothing in this repo; safe to remove:$/m);
+  assert.match(md, /^- `deleted-file\.log` \(\.aiignore\)$/m);
+  assert.match(md, /^- `stale\.log` \(pkg\/\.aiignore\)$/m);
+  assert.doesNotMatch(formatReportMarkdown(syntheticRun(2)), /Unused \.aiignore/);
+});
+
 test('report: no directory rollup when the noise is one directory', () => {
   // The demo repo lists a single noise item (data/export.json), so
   // the rollup is empty and the report must not print its header.
@@ -241,4 +267,46 @@ test('report: the context section names a custom --min-score bar, and the defaul
   run.checks.context.result.minScore = 90;
   const md = formatReportMarkdown(run);
   assert.match(md, /^Threshold: --min-score 90 \(default 85\)$/m);
+});
+
+test('summary: writeStepSummary is a no-op without GITHUB_STEP_SUMMARY', () => {
+  const run = runAll({ root: demoRepo, flakesDir: demoRuns });
+  assert.equal(writeStepSummary(run, { env: {} }), false);
+  assert.equal(writeStepSummary(run, { env: { GITHUB_STEP_SUMMARY: '' } }), false);
+});
+
+test('summary: writeStepSummary appends the same Markdown --report writes, never replaces existing content', () => {
+  const run = runAll({ root: demoRepo, flakesDir: demoRuns });
+  const dir = tempDir('dev-diagnosis-summary-');
+  const file = path.join(dir, 'summary.md');
+  fs.writeFileSync(file, '## Earlier step\n\n', 'utf8');
+  const env = { GITHUB_STEP_SUMMARY: file };
+  assert.equal(writeStepSummary(run, { env }), true);
+  assert.equal(writeStepSummary(run, { env }), true);
+  const md = fs.readFileSync(file, 'utf8');
+  assert.ok(md.startsWith('## Earlier step\n\n'));
+  // One render, two destinations: the summary carries the same lines
+  // as the report file — the Generated timestamp is the only line that
+  // can differ between two renders of the same run, so it is not pinned.
+  const report = formatReportMarkdown(run);
+  for (const line of report.split('\n').filter((l) => !l.startsWith('Generated: '))) {
+    assert.ok(md.includes(line), `summary is missing report line: ${line}`);
+  }
+  assert.equal(md.split('# dev-diagnosis report').length - 1, 2);
+});
+
+test('summary: writeStepSummary warns and returns false when the file cannot be written', () => {
+  const run = runAll({ root: demoRepo, flakesDir: demoRuns });
+  const dir = tempDir('dev-diagnosis-summary-');
+  const file = path.join(dir, 'no-such-dir', 'summary.md');
+  const errors = [];
+  const originalError = console.error;
+  console.error = (...args) => { errors.push(args.join(' ')); };
+  try {
+    assert.equal(writeStepSummary(run, { env: { GITHUB_STEP_SUMMARY: file } }), false);
+  } finally {
+    console.error = originalError;
+  }
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /Warning: could not write the step summary/);
 });

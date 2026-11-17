@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { tempDir } from '../scripts/support.mjs';
-import { AIIGNORE_HEADER, applyAiignore, classifyPath, isAiignored, isGitignored, matchesAiignore, parseGitignore, planAiignore, scanDirectory, topNoiseDirectories } from '../lib/context.mjs';
+import { AIIGNORE_HEADER, applyAiignore, classifyPath, formatNoiseSize, isAiignored, isGitignored, matchesAiignore, parseGitignore, planAiignore, scanDirectory, topNoiseDirectories } from '../lib/context.mjs';
 
 function makeRepo(files) {
   const root = tempDir('dev-diagnosis-context-');
@@ -50,6 +50,42 @@ test('classifyPath: a nested build directory is labelled by its full path', () =
   assert.equal(nested.suggestion, 'packages/foo/dist/');
   assert.equal(classifyPath('dist/app.js').noise.label, 'dist/');
   assert.equal(classifyPath('dist/app.js').suggestion, 'dist/');
+});
+
+test('classifyPath: a build directory inside the tooling is source, not output', () => {
+  // Prettier's scripts/build/ holds build.js, builders/ and
+  // esbuild-plugins/ — hand-written, tracked build tooling — and the
+  // scan flagged it as generated output and suggested hiding it from
+  // the agent. A build directory under scripts/, tools/, tooling/ or
+  // devtools/ is the build's source; everywhere else build/ is output.
+  for (const parent of ['scripts', 'tools', 'tooling', 'devtools']) {
+    const result = classifyPath(`${parent}/build/build.js`);
+    assert.equal(result.noise, undefined, `${parent}/build must not be noise`);
+    assert.equal(result.suggestion, null);
+  }
+  // The exemption is only for build/ under tooling: root build/, a
+  // package build/ and a dist/ under scripts/ are still output.
+  assert.equal(classifyPath('build/index.js').noise.reason, 'generated build output');
+  assert.equal(classifyPath('packages/foo/build/app.js').noise.reason, 'generated build output');
+  assert.equal(classifyPath('scripts/dist/app.js').noise.reason, 'generated build output');
+  // A dist/ nested inside the exempted build tooling is still output.
+  assert.equal(classifyPath('scripts/build/dist/app.js').noise.label, 'scripts/build/dist/');
+});
+
+test('scanDirectory: a scripts/build tooling directory is not noise, a root build/ is', () => {
+  const root = makeRepo({
+    'scripts/build/build.js': '// the build tooling\n',
+    'scripts/build/builders/a.js': '// a builder\n',
+    'build/out.js': '// generated\n',
+    'src/index.js': '// source\n',
+  });
+  const result = scanDirectory(root);
+  const buildNoise = result.noise.filter((item) => item.reason === 'generated build output');
+  assert.equal(buildNoise.length, 1);
+  assert.equal(buildNoise[0].label, 'build/');
+  assert.ok(!result.noise.some((item) => (item.label ?? '').startsWith('scripts/build/')));
+  assert.ok(!result.suggestions.includes('scripts/build/'));
+  assert.ok(result.suggestions.includes('build/'));
 });
 
 test('scanDirectory: an explicit maxFiles still caps the walk and says so', () => {
@@ -616,6 +652,61 @@ test('scanDirectory: topDirectories is empty when the noise is one directory', (
   assert.deepEqual(result.topDirectories, []);
 });
 
+test('scanDirectory: unusedAiignore names entries that match nothing', () => {
+  const root = makeRepo({
+    'src/index.js': 'x\n',
+    'tmp/work.tmp': 'x\n',
+    '.aiignore': 'deleted-file.log\n*.tmp\n',
+  });
+  const result = scanDirectory(root);
+  // *.tmp matched the tmp file, so only the stale entry is named —
+  // and it costs nothing: the score stays 100, the verdict stays
+  // clean, the list is advisory.
+  assert.deepEqual(result.unusedAiignore, [{ file: '.aiignore', pattern: 'deleted-file.log' }]);
+  assert.equal(result.score, 100);
+});
+
+test('scanDirectory: unusedAiignore counts a directory pattern used when its directory is pruned', () => {
+  const root = makeRepo({
+    'src/index.js': 'x\n',
+    'logs/a.log': 'x\n',
+    '.aiignore': 'logs/\ngone/\n',
+  });
+  const result = scanDirectory(root);
+  // logs/ matched the pruned directory, so it is used; only gone/
+  // — a directory that does not exist — is unused.
+  assert.deepEqual(result.unusedAiignore, [{ file: '.aiignore', pattern: 'gone/' }]);
+});
+
+test('scanDirectory: unusedAiignore is scoped to each nested .aiignore file', () => {
+  const root = makeRepo({
+    'src/index.js': 'x\n',
+    'pkg/keep.js': 'x\n',
+    'pkg/.aiignore': 'keep.js\nstale-in-pkg.log\n',
+    '.aiignore': 'root-stale.log\n',
+  });
+  const result = scanDirectory(root);
+  assert.deepEqual(result.unusedAiignore, [
+    { file: '.aiignore', pattern: 'root-stale.log' },
+    { file: 'pkg/.aiignore', pattern: 'stale-in-pkg.log' },
+  ]);
+});
+
+test('scanDirectory: unusedAiignore is empty without an .aiignore and null on a changed scope', () => {
+  const plain = makeRepo({ 'src/index.js': 'x\n' });
+  assert.deepEqual(scanDirectory(plain).unusedAiignore, []);
+  const scoped = makeRepo({
+    'src/index.js': 'x\n',
+    'old.log': 'x'.repeat(1200000),
+    '.aiignore': 'old.log\nnever-matched.log\n',
+  });
+  // A --changed scope sees only the changed files, so an entry
+  // matching an unchanged file would falsely read as unused: the
+  // check is not made at all, and --json says so with null.
+  const result = scanDirectory(scoped, { changed: { ref: 'HEAD', files: ['src/index.js'] } });
+  assert.equal(result.unusedAiignore, null);
+});
+
 test('scanDirectory: a changed scope scans only the changed files', () => {
   const root = makeRepo({
     'old-debug.log': 'x'.repeat(1200000),
@@ -704,7 +795,17 @@ test('scanDirectory: new-from-rev counts only the growth of an already-noisy fil
   assert.equal(result.noise.length, 1);
   assert.equal(result.noise[0].path, 'package-lock.json');
   assert.equal(result.noise[0].bytes, 100000);
+  // The item carries the file it grew from, so the noise line can say
+  // "97.7 KB of 2.00 MB" instead of reporting a 2 MB lockfile as a
+  // 97 KB one; the score still reads `bytes`, the delta.
+  assert.equal(result.noise[0].totalBytes, 2100000);
   assert.equal(result.score, 99);
+});
+
+test('formatNoiseSize: a grown file shows the growth against its total', () => {
+  assert.equal(formatNoiseSize({ bytes: 100000, totalBytes: 2100000 }), '97.7 KB of 2.00 MB');
+  assert.equal(formatNoiseSize({ bytes: 2048 }), '2.00 KB');
+  assert.equal(formatNoiseSize({ bytes: 1200000, totalBytes: 1200000 }), '1.14 MB');
 });
 
 test('scanDirectory: new-from-rev counts a file the ref never had in full', () => {
@@ -721,6 +822,9 @@ test('scanDirectory: new-from-rev counts a file the ref never had in full', () =
   assert.equal(result.noise.length, 1);
   assert.equal(result.noise[0].path, 'logs/new-debug.log');
   assert.equal(result.noise[0].bytes, 1200000);
+  // A file the ref never had counts in full: its `bytes` already is
+  // the file, so there is no total to carry.
+  assert.equal(result.noise[0].totalBytes, undefined);
 });
 
 test('scanDirectory: new-from-rev counts the whole file when its noise category changed', () => {
@@ -739,6 +843,9 @@ test('scanDirectory: new-from-rev counts the whole file when its noise category 
   assert.equal(result.noise.length, 1);
   assert.equal(result.noise[0].path, 'data.bin');
   assert.equal(result.noise[0].bytes, 1200000);
+  // Category changed: the whole file counts, not the delta — again
+  // no total to carry, `bytes` already is the file.
+  assert.equal(result.noise[0].totalBytes, undefined);
   assert.ok(result.score < 85, 'the whole large file fails the change');
 });
 

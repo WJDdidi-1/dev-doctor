@@ -65,6 +65,25 @@ test('doctor: HOME disagreeing with os.homedir() warns (unit level)', () => {
   assert.match(home.detail, /write under HOME/);
 });
 
+test('doctor: git missing from PATH warns, present passes (unit level)', () => {
+  // npm's doctor checks `which git` for the same reason: --changed,
+  // --staged, --new-from-rev and the hooks all shell out to git, so
+  // a machine without it fails those at use time instead of at
+  // checkup time. A warning, never a failure — the core commands
+  // work without git.
+  const emptyBin = tempDir('dev-diagnosis-doctor-nogit-');
+  const without = runDoctor({ pathEnv: emptyBin });
+  const missing = without.checks.find((check) => check.id === 'git');
+  assert.equal(missing.status, 'warn');
+  assert.match(missing.detail, /git is not on PATH/);
+  assert.match(missing.fix, /git-scm\.com/);
+  assert.match(missing.fix, /--changed/);
+  const withGit = runDoctor({});
+  const present = withGit.checks.find((check) => check.id === 'git');
+  assert.equal(present.status, 'ok');
+  assert.match(present.detail, /git resolves to /);
+});
+
 test('doctor: bare temp dir — command fails, nothing is written', () => {
   const home = tempDir('dev-diagnosis-doctor-home-');
   const binDir = tempDir('dev-diagnosis-doctor-bin-');
@@ -75,6 +94,8 @@ test('doctor: bare temp dir — command fails, nothing is written', () => {
   assert.equal(result.status, 1, result.stderr);
   assert.match(result.stdout, /\[FAIL\] Command — dev-diagnosis is not on PATH/);
   assert.match(result.stdout, /Fix: Install it globally: npm install -g dev-diagnosis-cli/);
+  assert.match(result.stdout, /\[warn\] Git — git is not on PATH/);
+  assert.match(result.stdout, /Fix: Install Git \(https:\/\/git-scm\.com\)/);
   // On POSIX os.homedir() honours $HOME, so the sandboxed HOME
   // agrees with it and the home check passes. On Windows
   // os.homedir() reads the user profile instead, so the sandboxed
@@ -99,10 +120,12 @@ test('doctor: command on PATH passes, exit 0 with only warnings', () => {
   const home = tempDir('dev-diagnosis-doctor-home-');
   const binDir = tempDir('dev-diagnosis-doctor-bin-');
   writeFakeBinary(binDir, 'dev-diagnosis');
+  writeFakeBinary(binDir, 'git');
   const cwd = tempDir('dev-diagnosis-doctor-cwd-');
   const result = run(['doctor'], envFor(home, binDir, cwd));
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /\[ok\] Command — dev-diagnosis resolves to .*dev-diagnosis/);
+  assert.match(result.stdout, /\[ok\] Git — git resolves to .*git/);
   assert.match(result.stdout, /Doctor: healthy/);
 });
 
@@ -130,6 +153,22 @@ test('doctor: global skill passes the skill check', () => {
   const result = run(['doctor'], envFor(home, binDir, cwd));
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /\[ok\] Skill — global skill installed and valid:/);
+});
+
+test('doctor: project agents skill passes the skill check', () => {
+  // --skill-generate --agents writes .agents/skills; doctor used to
+  // probe only the .claude homes, so that install read as "no
+  // SKILL.md installed" even though Gemini CLI and Codex would find it.
+  const home = tempDir('dev-diagnosis-doctor-home-');
+  const binDir = tempDir('dev-diagnosis-doctor-bin-');
+  writeFakeBinary(binDir, 'dev-diagnosis');
+  const cwd = tempDir('dev-diagnosis-doctor-cwd-');
+  fs.mkdirSync(path.join(cwd, '.agents', 'skills', 'dev-diagnosis'), { recursive: true });
+  fs.writeFileSync(path.join(cwd, '.agents', 'skills', 'dev-diagnosis', 'SKILL.md'),
+    '---\nname: dev-diagnosis\ndescription: Diagnose a repo before working in it.\n---\n\n# dev-diagnosis\n');
+  const result = run(['doctor'], envFor(home, binDir, cwd));
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /\[ok\] Skill — project \(agents\) skill installed and valid:/);
 });
 
 test('doctor: broken skill frontmatter warns and names the problem, without failing', () => {
@@ -193,14 +232,14 @@ test('doctor: --json is machine-readable', () => {
   assert.equal(result.status, 1, result.stderr);
   const parsed = JSON.parse(result.stdout);
   assert.equal(parsed.version, VERSION);
-  assert.equal(parsed.checks.length, 6);
-  assert.deepEqual(parsed.checks.map((check) => check.id), ['node', 'command', 'home', 'skill', 'mcp', 'aiignore']);
+  assert.equal(parsed.checks.length, 7);
+  assert.deepEqual(parsed.checks.map((check) => check.id), ['node', 'command', 'git', 'home', 'skill', 'mcp', 'aiignore']);
   assert.equal(parsed.passed, false);
   assert.equal(parsed.failed, 1);
   // On Windows the home check also warns ($HOME disagrees with
-  // os.homedir(), which reads the profile), so there are 2 warnings;
-  // on POSIX only the missing skill warns.
-  assert.equal(parsed.warnings, process.platform === 'win32' ? 2 : 1);
+  // os.homedir(), which reads the profile), so there are 3 warnings;
+  // on POSIX the missing skill and the missing git warn.
+  assert.equal(parsed.warnings, process.platform === 'win32' ? 3 : 2);
   for (const check of parsed.checks) {
     assert.ok(['ok', 'warn', 'fail'].includes(check.status));
     assert.equal(typeof check.detail, 'string');

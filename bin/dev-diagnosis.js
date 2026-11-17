@@ -27,7 +27,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { AIIGNORE_HEADER, estimateTokens, formatBytes } from '../lib/context.mjs';
+import { AIIGNORE_HEADER, estimateTokens, formatBytes, formatNoiseSize } from '../lib/context.mjs';
 import {
   UsageError, allJson, applyContextFixAndRescan, formatSummary,
   previewContextFix, rescanContext, runAll, runBinariesCheck, runCacheCheck, runContextCheck,
@@ -37,13 +37,13 @@ import { runMcpServer } from '../lib/mcp.mjs';
 import { runDoctor } from '../lib/doctor.mjs';
 import { generateCompletion, knownCommands, knownOptions } from '../lib/completion.mjs';
 import { ensureAgentsSection, generateSkill } from '../lib/skill.mjs';
-import { applySetup, checkSetup, planSetup } from '../lib/setup.mjs';
+import { applyHooks, applySetup, checkHooks, checkSetup, hookScript, planHooks, planSetup } from '../lib/setup.mjs';
 import { writeSecretsBaseline } from '../lib/baseline.mjs';
 import { formatFlakesTable } from '../lib/flakes.mjs';
 import { MIN_BINARY_BYTES } from '../lib/binaries.mjs';
 import { formatContextAnnotations } from '../lib/annotations.mjs';
 import { formatScanCacheLine } from '../lib/scan-cache.mjs';
-import { formatMs, formatReportMarkdown, formatTokens, section, starPromptLine, verdictLine } from '../lib/report.mjs';
+import { formatMs, formatReportMarkdown, formatTokens, section, starPromptLine, verdictLine, writeStepSummary } from '../lib/report.mjs';
 
 const VERSION = JSON.parse(
   fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
@@ -59,9 +59,9 @@ Usage:
   dev-diagnosis path <command> [--json]
   dev-diagnosis cache [--json] [--cache-dir <dir>] [--cwd <dir>] [--runs N] -- <build-command...>
   dev-diagnosis flakes <runs-dir> [--json] [--top N]
-  dev-diagnosis --mcp [--sandbox <dir>]
-  dev-diagnosis --skill-generate [--global | --project]
-  dev-diagnosis setup [--dry-run] [--check]
+  dev-diagnosis --mcp [--sandbox <dir>] [--read-only]
+  dev-diagnosis --skill-generate [--global | --project] [--agents]
+  dev-diagnosis setup [--dry-run] [--check] [--hooks]
   dev-diagnosis doctor [--json]
   dev-diagnosis completion <bash|zsh|fish>
   dev-diagnosis --help
@@ -78,6 +78,9 @@ Commands:
   context   Find the files an AI coding agent should not read: build
             output, lockfiles, logs and oversized files. Prints a 0-100
             score and the .aiignore-style suggestions that would fix it.
+            It also names .aiignore entries that match nothing, so a
+            dead entry does not rot silently (advisory only — it never
+            changes the score, and --fix never removes entries).
   secrets   Scan named files for secrets only: the same content-level
             credential shapes the context check looks for (AWS keys,
             GitHub tokens, private keys, Slack tokens, high-entropy
@@ -109,22 +112,33 @@ Commands:
             MCP-compatible agent can call them as tools. See the README
             for the client config. --sandbox <dir> (alias --root)
             restricts every path the tools touch to that directory.
+            --read-only serves only the read-only tools: diagnose_cache
+            is not listed, and diagnose_context, diagnose_all and
+            diagnose_secrets lose their write inputs — a host that
+            auto-approves read-only tools can call them without
+            prompting, and a call that asks for a write anyway gets a
+            tool error instead of a write.
   --skill-generate
             Write a Claude Agent Skills SKILL.md for dev-diagnosis:
             ./.claude/skills/dev-diagnosis/SKILL.md by default
             (--project), or ~/.claude/skills/dev-diagnosis/SKILL.md
             with --global. Refuses to overwrite an existing file.
-            Also appends a short section to ./AGENTS.md (--project
-            only), so agents that read AGENTS.md at startup find it.
+            With --agents, write it to ./.agents/skills instead
+            (or ~/.agents/skills with --global): the shared location
+            Gemini CLI and Codex discover skills from, so the same
+            skill reaches them too. Also appends a short section to
+            ./AGENTS.md (--project only), so agents that read
+            AGENTS.md at startup find it.
   setup     One-command install: detect the agents on this machine
-            (Claude Code, Codex CLI, Cursor, VS Code) and write the
+            (Claude Code, Codex CLI, Cursor, Gemini CLI, VS Code) and write the
             MCP config that wires dev-diagnosis into each of them.
             Prints a preview of exactly what will be written before
             writing anything; a config that already mentions
             dev-diagnosis is left alone. --dry-run shows the preview
             without writing; --check reports which agents are wired.
+            --hooks installs native git hooks instead (see --hooks).
   doctor    Check this installation is healthy: Node version,
-            dev-diagnosis on PATH, the home directory setup and
+            dev-diagnosis and git on PATH, the home directory setup and
             --skill-generate write into, installed skills, MCP wiring
             and .aiignore. Read-only — it changes nothing, so it works
             even when the rest of the tool is misbehaving. The method
@@ -264,6 +278,8 @@ Options:
   --sandbox <dir> restrict --mcp to paths under <dir> (--root is an alias)
   --global        with --skill-generate: write the skill to ~/.claude/skills
   --project       with --skill-generate: write the skill to ./.claude/skills
+  --agents        with --skill-generate: write the skill to .agents/skills
+                  instead of .claude/skills (Gemini CLI and Codex)
   --dry-run       with setup, or with --fix (context and all): show
                   the preview without writing anything. With --fix it
                   lists the .aiignore entries that would be added (and
@@ -272,8 +288,24 @@ Options:
                   passes — like prettier --check; 0 only when nothing
                   would change and the repo passes.
   --check         with setup: report which agents are wired, without writing
+  --hooks         with setup: install native git hooks (.githooks,
+                  core.hooksPath) that run the context check on
+                  pre-commit and the secrets check on commit-msg —
+                  the same two commands the README documents for
+                  husky, with no husky install. --check with --hooks
+                  reports whether they are installed; --dry-run
+                  previews the hook files without writing them.
+                  Refuses to overwrite a hook file or a hooks path
+                  it did not install.
   -h, --help      show this help
   -v, --version   print the version
+
+Examples:
+  dev-diagnosis                  run every check on this repo
+  dev-diagnosis context --fix    find the noise, write the .aiignore fix, re-scan
+  dev-diagnosis all --changed --staged
+                                 judge only what is staged for commit
+  dev-diagnosis doctor           check the installation is healthy
 
 Exit codes: 0 = every check that ran passed; 1 = a check found something
 to fix or could not run; 2 = usage error. With --fix the exit code
@@ -338,8 +370,8 @@ function parseArgs(argv) {
     cache: false, cacheLocation: null, minScore: null,
     secretsBaseline: null, writeSecretsBaseline: null, only: null, skip: null,
     buildCommand: null, error: null,
-    mcp: false, sandbox: null, skillGenerate: false, skillGlobal: false, skillProject: false,
-    dryRun: false, check: false,
+    mcp: false, sandbox: null, readOnly: false, skillGenerate: false, skillGlobal: false, skillProject: false, skillAgents: false,
+    dryRun: false, check: false, hooks: false,
   };
   let i = 0;
   while (i < argv.length) {
@@ -353,9 +385,12 @@ function parseArgs(argv) {
     else if (arg === '--help' || arg === '-h') parsed.help = true;
     else if (arg === '--version' || arg === '-v') parsed.version = true;
     else if (arg === '--mcp') parsed.mcp = true;
+    else if (arg === '--read-only') parsed.readOnly = true;
     else if (arg === '--dry-run') parsed.dryRun = true;
     else if (arg === '--check') parsed.check = true;
+    else if (arg === '--hooks') parsed.hooks = true;
     else if (arg === '--skill-generate') parsed.skillGenerate = true;
+    else if (arg === '--agents') parsed.skillAgents = true;
     else if (arg === '--global') parsed.skillGlobal = true;
     else if (arg === '--project') parsed.skillProject = true;
     else if (arg === '--command') {
@@ -491,7 +526,19 @@ function parseArgs(argv) {
       // Suggest the option the user almost certainly meant
       // (--comand=node -> --command); the part after '=' is a value,
       // not part of the name.
-      const suggestion = didYouMean(arg.split('=')[0], KNOWN_OPTIONS);
+      let suggestion = didYouMean(arg.split('=')[0], KNOWN_OPTIONS);
+      if (!suggestion && parsed.command === null) {
+        // A flag-shaped token that names — or nearly names — a
+        // subcommand (--contex, or --all outright) almost certainly
+        // means the subcommand, not an option: suggest the command,
+        // without dashes. Only before any command was parsed — after
+        // `context` it would be noise. The exact-name case is the
+        // strongest signal of all, so it suggests too.
+        const bare = arg.split('=')[0].replace(/^-+/, '');
+        suggestion = KNOWN_COMMANDS.includes(bare)
+          ? `Did you mean '${bare}'?`
+          : didYouMean(bare, KNOWN_COMMANDS);
+      }
       parsed.error = `unknown option: ${arg}${suggestion ? `\n${suggestion}` : ''}`;
     } else if (parsed.command === null) parsed.command = arg;
     else parsed.positional.push(arg);
@@ -540,7 +587,7 @@ function printContext(result, json) {
   if (result.noise.length > 0) {
     console.log('Noise to keep away from an AI agent:');
     for (const item of result.noise.slice(0, 20)) {
-      console.log(`  ${item.label} — ${item.reason} (${formatBytes(item.bytes)}, ≈ ${formatTokens(item.tokens)} tokens)`);
+      console.log(`  ${item.label} — ${item.reason} (${formatNoiseSize(item)}, ≈ ${formatTokens(item.tokens)} tokens)`);
     }
     if (result.noise.length > 20) console.log(`  ... and ${result.noise.length - 20} more`);
     // Ranked by cost, so the first few items are where the waste is:
@@ -581,10 +628,23 @@ function printContext(result, json) {
     for (const item of result.review.slice(0, 10)) {
       console.log(`  ${item.label} — ${item.reason}`);
     }
+    // The report says how many more there are; the terminal used to
+    // drop them silently, so a long review list read as a short one.
+    if (result.review.length > 10) console.log(`  … and ${result.review.length - 10} more`);
   }
   if (result.reviewSuggestions?.length > 0) {
     console.log('Consider for .aiignore (advisory — --fix does not write these):');
     for (const suggestion of result.reviewSuggestions) console.log(`  ${suggestion}`);
+  }
+  // Unused .aiignore entries (ESLint's --report-unused-disable-
+  // directives method): advisory only — they cost no points, never
+  // fail the run, and --fix never removes them; deleting an ignore
+  // line is the user's call. Absent on a --changed-scoped scan, where
+  // the check cannot be made (see lib/context.mjs).
+  if (result.unusedAiignore?.length > 0) {
+    const n = result.unusedAiignore.length;
+    console.log(`Unused .aiignore ${n === 1 ? 'entry' : 'entries'} (${n}) — match${n === 1 ? 'es' : ''} nothing in this repo; safe to remove:`);
+    for (const entry of result.unusedAiignore) console.log(`  ${entry.pattern}  (${entry.file})`);
   }
   // A baseline never silences anything invisibly: say how many
   // triaged findings it suppressed, so the reader knows the review
@@ -788,11 +848,62 @@ function printPathWarning(plan) {
   }
 }
 
+function printSetupHooksPreview(plan) {
+  if (plan.steps.write.length > 0) {
+    for (const name of plan.steps.write) {
+      console.log(`.githooks/${name} — will write:`);
+      for (const line of hookScript(name).replace(/\n$/, '').split('\n')) console.log(`    ${line}`);
+    }
+  }
+  if (plan.steps.setConfig) console.log('core.hooksPath — will set to .githooks');
+  if (plan.steps.write.length === 0) console.log('Hook files already in place — only the config needs setting.');
+}
+
+function runSetupHooks(args) {
+  if (args.check) {
+    const result = checkHooks();
+    if (result.status === 'not-a-repo') {
+      console.log('Git hooks: not installed — not a git repository (run setup --hooks inside a repo).');
+      return 1;
+    }
+    if (result.installed) {
+      console.log('Git hooks: installed — .githooks/pre-commit and .githooks/commit-msg, core.hooksPath is .githooks.');
+      return 0;
+    }
+    if (result.status === 'create') {
+      console.log('Git hooks: not installed — run `dev-diagnosis setup --hooks` to install them.');
+      return 1;
+    }
+    console.log(`Git hooks: not installed — ${result.note}.`);
+    return 1;
+  }
+  const plan = planHooks();
+  if (plan.status === 'not-a-repo' || plan.status === 'foreign-hooks-path' || plan.status === 'foreign-hook') {
+    console.log(`Git hooks: not installed — ${plan.note}.`);
+    return 1;
+  }
+  if (plan.status === 'already-installed') {
+    console.log('Git hooks already installed — .githooks/pre-commit and .githooks/commit-msg, core.hooksPath is .githooks.');
+    return 0;
+  }
+  if (args.dryRun) console.log('Dry run — nothing will be written.');
+  printSetupHooksPreview(plan);
+  if (args.dryRun) return 0;
+  const result = applyHooks(plan);
+  if (result.action === 'config-failed') {
+    console.log(`Git hooks: ${result.detail}`);
+    return 1;
+  }
+  console.log(`Git hooks: ${result.detail}`);
+  return 0;
+}
+
 function runSetup(args) {
+  if (args.hooks) return runSetupHooks(args);
   if (args.check) {
     const result = checkSetup();
     if (result.detected === 0) {
-      console.log('No supported agent found (looked for Claude Code, Codex CLI, Cursor, VS Code).');
+      console.log('No supported agent found (looked for Claude Code, Codex CLI, Cursor, Gemini CLI, VS Code).');
       return 1;
     }
     for (const row of result.rows) {
@@ -803,7 +914,7 @@ function runSetup(args) {
   }
   const plan = planSetup();
   if (plan.agents.length === 0) {
-    console.log('No supported agent found (looked for Claude Code, Codex CLI, Cursor, VS Code).');
+    console.log('No supported agent found (looked for Claude Code, Codex CLI, Cursor, Gemini CLI, VS Code).');
     return 1;
   }
   if (args.dryRun) console.log('Dry run — nothing will be written.');
@@ -917,7 +1028,7 @@ async function main(argv) {
     return 2;
   }
   if (args.mcp) {
-    await runMcpServer({ sandbox: args.sandbox, version: VERSION });
+    await runMcpServer({ sandbox: args.sandbox, version: VERSION, readOnly: args.readOnly });
     return 0;
   }
   if (args.skillGenerate) {
@@ -927,14 +1038,15 @@ async function main(argv) {
       return 2;
     }
     const scope = args.skillGlobal ? 'global' : 'project';
+    const flavor = args.skillAgents ? 'agents' : 'claude';
     // The AGENTS.md section goes in first, so a re-run that refuses
     // to overwrite an existing SKILL.md still leaves the repo with
     // the discovery entry point — it is append-only and idempotent.
-    const agents = ensureAgentsSection(scope);
+    const agents = ensureAgentsSection(scope, process.cwd(), flavor);
     if (agents.status === 'created') console.log(`Wrote ${agents.path}`);
     else if (agents.status === 'appended') console.log(`Appended a section to ${agents.path}`);
     else if (agents.status === 'skipped') console.log(`Note: ${agents.reason}`);
-    const out = generateSkill(scope);
+    const out = generateSkill(scope, process.cwd(), flavor);
     if (!out.created) {
       console.error(`Error: ${out.reason} — refusing to overwrite it.`);
       return 1;
@@ -942,13 +1054,18 @@ async function main(argv) {
     console.log(`Wrote ${out.path}`);
     return 0;
   }
-  if (args.skillGlobal || args.skillProject) {
-    console.error('Error: --global and --project only apply to --skill-generate.');
+  if (args.skillGlobal || args.skillProject || args.skillAgents) {
+    console.error('Error: --global, --project and --agents only apply to --skill-generate.');
     console.error('Run with --help to see the available options.');
     return 2;
   }
   if (args.sandbox) {
     console.error('Error: --sandbox/--root only applies to --mcp.');
+    console.error('Run with --help to see the available options.');
+    return 2;
+  }
+  if (args.readOnly) {
+    console.error('Error: --read-only only applies to --mcp.');
     console.error('Run with --help to see the available options.');
     return 2;
   }
@@ -963,6 +1080,11 @@ async function main(argv) {
   // --dry-run with no command and no --fix is still a usage error.
   if (args.check && args.command !== 'setup') {
     console.error('Error: --check only applies to setup.');
+    console.error('Run with --help to see the available options.');
+    return 2;
+  }
+  if (args.hooks && args.command !== 'setup') {
+    console.error('Error: --hooks only applies to setup.');
     console.error('Run with --help to see the available options.');
     return 2;
   }
@@ -1273,6 +1395,11 @@ async function main(argv) {
           console.error(`Wrote report to ${path.resolve(args.report)}`);
         }
         console.log(JSON.stringify(allJson(run, args.top), null, 2));
+        // The Step Summary is where the Actions page shows the result;
+        // locally GITHUB_STEP_SUMMARY is unset and this is a no-op. It
+        // runs for --json too — the summary file is separate from stdout,
+        // so machine output stays clean.
+        writeStepSummary(run, { top: args.top });
         printAnnotations(run.checks.context?.result, { json: true, enabled: args.annotations });
         return run.overall && dryRunFix?.wouldChange !== true ? 0 : 1;
       }
@@ -1334,6 +1461,10 @@ async function main(argv) {
         if (!writeReportFile(run, args.top, args.report)) return 1;
         console.log(`Wrote report to ${path.resolve(args.report)}`);
       }
+      // Same Markdown as --report, on the run page: inside Actions the
+      // summary is the first thing a maintainer sees, the log is one
+      // click deeper. Locally this is a no-op.
+      writeStepSummary(run, { top: args.top });
       return run.overall && !dryRunWouldChange ? 0 : 1;
     }
     console.error(`Error: unknown command: ${command}`);

@@ -1,7 +1,7 @@
 # dev-diagnosis as a pre-commit hook (pre-commit.com framework).
 # Users add this to their own .pre-commit-config.yaml:
 #   - repo: https://github.com/WJDdidi-1/dev-doctor
-#     rev: v0.2.4
+#     rev: v0.2.5
 #     hooks:
 #       - id: dev-diagnosis
 #       - id: dev-diagnosis-commit-msg
@@ -33,7 +33,7 @@
   description: Fail the commit when the change adds AI-agent context noise
   entry: dev-diagnosis
   language: node
-  additional_dependencies: ['dev-diagnosis-cli@0.2.4']
+  additional_dependencies: ['dev-diagnosis-cli@0.2.5']
   args: [context, --changed, --staged]
   pass_filenames: false
 - id: dev-diagnosis-commit-msg
@@ -41,7 +41,7 @@
   description: Fail the commit when the commit message contains a possible secret
   entry: dev-diagnosis
   language: node
-  additional_dependencies: ['dev-diagnosis-cli@0.2.4']
+  additional_dependencies: ['dev-diagnosis-cli@0.2.5']
   args: [secrets]
   stages: [commit-msg]
   pass_filenames: true

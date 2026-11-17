@@ -1,7 +1,7 @@
 {
   "metadata": {
     "description": "Diagnose a repo before working in it — context noise that wastes tokens, missing commands, build-cache value, flaky tests.",
-    "version": "0.2.4"
+    "version": "0.2.5"
   },
   "name": "dev-diagnosis",
   "owner": {

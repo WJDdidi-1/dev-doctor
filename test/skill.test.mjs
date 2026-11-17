@@ -124,3 +124,56 @@ test('skill: --global without --skill-generate is a usage error', () => {
   assert.equal(result.status, 2);
   assert.match(result.stderr, /only apply to --skill-generate/);
 });
+
+test('skill: --skill-generate --agents writes to .agents/skills, byte-identical to the Claude copy', () => {
+  // Gemini CLI discovers skills from .agents/skills/ (its own docs:
+  // "an interoperable path … compatible across different AI tools")
+  // and Codex scans .agents/skills too — but --skill-generate only
+  // ever wrote .claude/skills, so a Gemini/Codex user got a skill
+  // their agent never saw. The body is the same spec-valid file in
+  // both places; only the destination differs.
+  const dir = tempDir('dev-diagnosis-skill-agents-dir-');
+  const result = run(['--skill-generate', '--agents'], { cwd: dir });
+  assert.equal(result.status, 0, result.stderr);
+  const target = path.join(dir, '.agents', 'skills', 'dev-diagnosis', 'SKILL.md');
+  assert.match(result.stdout, new RegExp(`Wrote ${target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+  assert.ok(!fs.existsSync(path.join(dir, '.claude')));
+  const agentsContent = fs.readFileSync(target, 'utf8');
+  // The AGENTS.md section points at the file that was actually written.
+  assert.match(fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8'), /Full skill: `\.agents\/skills\/dev-diagnosis\/SKILL\.md`/);
+  // And the same content serves the Claude location too.
+  const claude = run(['--skill-generate'], { cwd: dir });
+  assert.equal(claude.status, 0, claude.stderr);
+  assert.equal(agentsContent, fs.readFileSync(path.join(dir, '.claude', 'skills', 'dev-diagnosis', 'SKILL.md'), 'utf8'));
+});
+
+test('skill: --skill-generate --agents --global writes under a temp HOME', () => {
+  const home = tempDir('dev-diagnosis-skill-agents-home-');
+  const dir = tempDir('dev-diagnosis-skill-agents-global-');
+  const result = run(['--skill-generate', '--agents', '--global'], {
+    cwd: dir,
+    env: { ...process.env, HOME: home },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(fs.existsSync(path.join(home, '.agents', 'skills', 'dev-diagnosis', 'SKILL.md')));
+  assert.ok(!fs.existsSync(path.join(home, '.claude')));
+  assert.ok(!fs.existsSync(path.join(dir, '.agents')));
+});
+
+test('skill: a second --skill-generate --agents refuses to overwrite', () => {
+  const dir = tempDir('dev-diagnosis-skill-agents-exists-');
+  const first = run(['--skill-generate', '--agents'], { cwd: dir });
+  assert.equal(first.status, 0, first.stderr);
+  const target = path.join(dir, '.agents', 'skills', 'dev-diagnosis', 'SKILL.md');
+  fs.writeFileSync(target, 'my own edits\n');
+  const second = run(['--skill-generate', '--agents'], { cwd: dir });
+  assert.equal(second.status, 1);
+  assert.match(second.stderr, /already exists/);
+  assert.equal(fs.readFileSync(target, 'utf8'), 'my own edits\n');
+});
+
+test('skill: --agents without --skill-generate is a usage error', () => {
+  const result = run(['--agents']);
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /only apply to --skill-generate/);
+});

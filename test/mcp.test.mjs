@@ -739,3 +739,100 @@ test('mcp: diagnose_context and diagnose_all take minScore, and a bad one is an 
     await client.close();
   }
 });
+
+test('mcp: --read-only lists only the read-only tools, with read-only annotations and no write inputs', async () => {
+  const examplesCopy = freshExamples();
+  const client = new McpClient(['--mcp', '--read-only', '--sandbox', examplesCopy]);
+  try {
+    client.send({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
+    client.send({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'diagnose_context', arguments: { path: 'demo-repo' } } });
+    client.send({ jsonrpc: '2.0', id: 3, method: 'prompts/get', params: { name: 'diagnose_repo', arguments: { path: 'demo-repo' } } });
+    const [list, context, prompt] = parse(await client.waitFor(3));
+    // diagnose_cache runs a build command, so there is no read-only
+    // form of it: it is not listed at all. The method is GitHub's
+    // official MCP server's --read-only: write tools are skipped.
+    assert.deepEqual(
+      list.result.tools.map((tool) => tool.name),
+      ['diagnose_context', 'diagnose_binaries', 'diagnose_path', 'diagnose_flakes', 'diagnose_all', 'diagnose_secrets'],
+    );
+    // Every listed tool is honestly read-only now, so a host that
+    // auto-approves read-only tools can call them without prompting.
+    for (const tool of list.result.tools) {
+      assert.equal(tool.annotations.readOnlyHint, true, `${tool.name} should be read-only`);
+      assert.equal(tool.annotations.destructiveHint, false, `${tool.name} should not be destructive`);
+    }
+    // The mixed tools lose their write inputs: fix writes .aiignore,
+    // cache writes the scan cache file, buildCommand runs a build,
+    // writeSecretsBaseline writes a baseline file.
+    const byName = Object.fromEntries(list.result.tools.map((tool) => [tool.name, tool]));
+    assert.equal(byName.diagnose_context.inputSchema.properties.fix, undefined);
+    assert.equal(byName.diagnose_context.inputSchema.properties.dryRun, undefined);
+    assert.equal(byName.diagnose_context.inputSchema.properties.cache, undefined);
+    assert.equal(byName.diagnose_all.inputSchema.properties.fix, undefined);
+    assert.equal(byName.diagnose_all.inputSchema.properties.dryRun, undefined);
+    assert.equal(byName.diagnose_all.inputSchema.properties.buildCommand, undefined);
+    assert.equal(byName.diagnose_all.inputSchema.properties.cacheDir, undefined);
+    assert.equal(byName.diagnose_all.inputSchema.properties.runs, undefined);
+    assert.equal(byName.diagnose_all.inputSchema.properties.cache, undefined);
+    assert.equal(byName.diagnose_secrets.inputSchema.properties.writeSecretsBaseline, undefined);
+    // A plain read still works in read-only mode.
+    assert.equal(context.result.isError, false);
+    assert.equal(JSON.parse(context.result.content[0].text).score, 75);
+    // The prompt must not tell the agent to preview the fix with
+    // fix: true — that call would fail in this mode.
+    const text = prompt.result.messages[0].content.text;
+    assert.match(text, /read-only/);
+    assert.doesNotMatch(text, /fix: true/);
+  } finally {
+    await client.close();
+  }
+});
+
+test('mcp: --read-only rejects every write as a tool error and writes nothing', async () => {
+  const examplesCopy = freshExamples();
+  const client = new McpClient(['--mcp', '--read-only', '--sandbox', examplesCopy]);
+  try {
+    // A client that cached the full tool list can still ask for a
+    // write: the server must refuse it, not perform it.
+    client.send({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'diagnose_context', arguments: { path: 'demo-repo', fix: true } } });
+    client.send({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'diagnose_context', arguments: { path: 'demo-repo', cache: true } } });
+    client.send({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'diagnose_all', arguments: { path: 'demo-repo', fix: true } } });
+    client.send({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'diagnose_all', arguments: { path: 'demo-repo', buildCommand: ['node', 'build.mjs'] } } });
+    client.send({ jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'diagnose_cache', arguments: { path: 'demo-repo', command: ['node', 'build.mjs'] } } });
+    client.send({ jsonrpc: '2.0', id: 6, method: 'tools/call', params: { name: 'diagnose_secrets', arguments: { paths: ['demo-repo/README.md'], writeSecretsBaseline: 'baseline.json' } } });
+    const results = parse(await client.waitFor(6));
+    for (const result of results) {
+      assert.equal(result.result.isError, true);
+      assert.match(result.result.content[0].text, /read-only mode/);
+    }
+    // Nothing was written: no .aiignore, no scan cache, no baseline.
+    assert.equal(fs.existsSync(path.join(examplesCopy, 'demo-repo', '.aiignore')), false);
+    assert.equal(fs.existsSync(path.join(examplesCopy, 'demo-repo', '.dev-diagnosis-cache.json')), false);
+    assert.equal(fs.existsSync(path.join(examplesCopy, 'baseline.json')), false);
+  } finally {
+    await client.close();
+  }
+});
+
+test('mcp: the README and llms.txt name every tool the server lists', async () => {
+  // The tool list drifted from the docs twice (llms.txt said "four
+  // checks", the README said "five checks") — the method is
+  // playwright-mcp's update-readme.js, a generated tool list, cut to
+  // our size: a test that fails when a tool is added or renamed
+  // without updating the docs. The server is the source of truth, so
+  // the test asks it.
+  const client = new McpClient(['--mcp']);
+  try {
+    client.send({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
+    const [list] = parse(await client.waitFor(1));
+    const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
+    const llms = fs.readFileSync(path.join(root, 'llms.txt'), 'utf8');
+    assert.ok(list.result.tools.length > 0, 'the server should list at least one tool');
+    for (const tool of list.result.tools) {
+      assert.ok(readme.includes(tool.name), `README should name the ${tool.name} tool`);
+      assert.ok(llms.includes(tool.name), `llms.txt should name the ${tool.name} tool`);
+    }
+  } finally {
+    await client.close();
+  }
+});

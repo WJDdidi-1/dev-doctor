@@ -1,5 +1,336 @@
 # Changelog
 
+## 0.2.5 — 2026-11-17
+
+- A flag-shaped subcommand now suggests the subcommand: `dev-diagnosis
+  --contex` used to die with a bare "unknown option" and no hint, even
+  though the user almost certainly meant the `context` subcommand —
+  the suggester only matched against options, and `--context` is not
+  one. Before any command is parsed, an unknown option is now also
+  matched (dashes stripped) against the subcommands, so `--contex`
+  suggests `context` and `--all` suggests `all`; an option typo still
+  wins when it is closer (`--jsonn` still suggests `--json`), and
+  after a command is parsed the fallback stays off, so `context
+  --contex` suggests nothing. Same method gh uses (Cobra's threshold
+  2), extended one step: gh suggests commands for mistyped commands,
+  this also suggests them for flag-shaped ones.
+
+- The secret scan now checks literal markers before running its
+  regexes (ripgrep's method: a regex engine only runs where a literal
+  candidate exists). Every rule requires a literal — `AKIA`, a `gh?_`
+  / `github_pat_` prefix, `-----BEGIN `, `xox`, or one of the generic
+  rule's keywords — so a file containing none of them cannot match
+  and skips the line split and the per-line regexes. Detection is
+  unchanged: the Node dogfood finds the same 149 secrets and the same
+  47,465,185 tokens before and after. Measured on nodejs/node, the
+  secret scan drops from ~46 s to ~42 s on this VM (3,225 of 54,807
+  files pass the prefilter); the rest of the scan's time is the
+  per-file open cost, which no content check can avoid — repeat scans
+  use `--cache` for that.
+
+- A dangling symlink is now its own unknown (`dangling-symlink`), not
+  "could not be read": dogfooding on `just` reported its
+  `www/man/en` and `www/man/zh` — links to unbuilt docs — as "2
+  files or directories could not be read", which sends the reader
+  hunting for an unreadable file that does not exist. A link whose
+  target does not exist has nothing to read, so the report now says
+  so (`2 dangling symlinks point at a target that does not exist, so
+  there is nothing to read`). The same lesson as the unfollowed
+  directory links (round 79), applied to the sibling case.
+
+- `--new-from-rev` growth is now shown against the file it grew from:
+  a 2 MB lockfile grown by 100 KB used to report as `lockfile (97.7
+  KB, ≈ 25k tokens)` — a "large file" of 97.7 KB, contradicting the
+  1 MB large-file line and reading as if the file itself were 97 KB.
+  Noise items now carry `totalBytes` (in `--json` too) when the
+  counted bytes are a growth, and the terminal, `--report` table and
+  `--annotations` all print `97.7 KB of 2.00 MB`. The score, the
+  token estimate and the fix list still read the growth only; a
+  brand-new file, a renamed file and a file whose noise category
+  changed count in full and carry no total, since their bytes
+  already are the file. The method is delta's: show exactly what
+  changed, against what it changed from.
+
+- `--skill-generate --agents` writes the skill to `.agents/skills/`
+  instead of `.claude/skills/` — the same spec-valid SKILL.md, a
+  different destination. Gemini CLI (108,873 stars, verified this
+  round) discovers skills from `.agents/skills/` and
+  `~/.agents/skills/` — its own docs call the alias "an
+  interoperable path … compatible across different AI tools" — and
+  Codex scans `.agents/skills` too, but `--skill-generate` only
+  ever wrote the Claude paths, so a Gemini or Codex user got a skill
+  their agent never saw. `doctor` now probes all four skill homes
+  (project/global × Claude/shared) and says which one it found, and
+  the AGENTS.md section points at the file that was actually
+  written. `setup` already wired Gemini's MCP config; the skill is
+  the part that was missing.
+
+- Fixed: importing `lib/secrets.mjs` on its own crashed with
+  "Cannot access 'SECRET_RULES' before initialization". It imported
+  two file-kind facts from `lib/context.mjs` while `context.mjs`
+  imported the secret rules back, and `context.mjs` builds its
+  `RULE_LABELS` map at module top level while `SECRET_RULES` was
+  still in its temporal dead zone. The shared facts (`LOCKFILES`,
+  `isTemplateFile`) now live in a leaf module, `lib/filekinds.mjs`,
+  which imports nothing; `context.mjs` re-exports them so existing
+  importers keep working. Pinned by a test that imports
+  `secrets.mjs` alone in a fresh process.
+
+- Secrets: the same credential in many files is now one finding, not
+  one per file. Dogfooding on Biome found 2,050 findings that were
+  41 distinct secrets — the same test token snapshotted 433 times —
+  and a review list that long is unreadable: a real key hides in the
+  flood, and the terminal printed only the first 10 without saying
+  how many more there were. Findings are now grouped by fingerprint
+  (the same fingerprint the baseline already matches on, so one
+  triage decision still suppresses every occurrence): the first
+  occurrence is kept, with `occurrences` counting every place the
+  secret appears and the reason saying so (`also in N more places`),
+  in `context`, `all`, `secrets` and the MCP tools. The terminal
+  review list also says `… and N more` now, like the report already
+  did.
+
+- Secrets: a bare identifier assigned to a secret-named variable in a
+  code file no longer flags (`token = previouslyFetchedTokenValue`).
+  A bare identifier is a variable, not a credential — a real
+  credential in code is a string literal — so the generic rule now
+  skips an unquoted identifier-shaped value in a code file. The
+  exclusion is deliberately narrow: a bare value in an env or shell
+  file still flags (there a bare value IS a credential), a quoted
+  string in code still flags, and a long all-hex value still flags
+  (no real variable is 20 hex characters — the first draft of this
+  exclusion silenced one of the twenty random test keys, which
+  starts with a letter, and the regression test caught it). Closes
+  the round-91 residual.
+
+- Secrets: a function call assigned to a secret-named variable no
+  longer flags (`token = getTypeAnnotationFirstToken(path)`).
+  Dogfooding on prettier found it: the generic rule captured the
+  27-character function name as the "value" and its entropy cleared
+  the bar — a reference, not a credential, the same class as the
+  environment references and dotted property chains already
+  excluded. A quoted key still flags, and an Algolia search key in
+  the same repo still flags (advisory, unverified — a search-only
+  key is public by design, but the file alone cannot prove it is
+  not an admin key, so it stays flagged for the user to baseline).
+
+- `context` now names `.aiignore` entries that match nothing in the
+  repo (ESLint's `--report-unused-disable-directives` method, for
+  `.aiignore`): a dead entry — a file deleted long ago, a pattern
+  that never matched — used to rot silently while the scan reported
+  100/100. It is advisory only: it costs no score points, never
+  fails the run, and `--fix` never removes entries. It appears in
+  the terminal, `--json` (`unusedAiignore`, with the file each entry
+  came from, including nested `.aiignore` files), `--report` and the
+  MCP tools; on a `--changed`-scoped scan it is `null`, because an
+  entry matching an unchanged file would falsely read as unused.
+
+- `--help` now ends with an Examples section: the four invocations
+  a first-time user actually types (`dev-diagnosis`,
+  `context --fix`, `all --changed --staged`, `doctor`), each with
+  one line saying what it does. The help was a wall of flags with
+  no runnable example — the method is tldr's, examples first,
+  flag reference second — and the README's verbatim example
+  already proved users need one; the help is where a new user
+  looks first. Pinned by a test so the examples cannot drift
+  from the commands they show.
+
+- Tests: coverage is now measured with Node's built-in runner
+  (vitest's `--coverage` method, no new dependency): full-suite
+  line coverage 95.8% (branches 85.4%, functions 94.1%).
+  Measuring it found the build-command runner's timeout and
+  spawn-error paths untested — a hanging build is now proven to
+  come back as an error instead of hanging the diagnosis — and
+  the invalid-argv guard is tested too. The remaining uncovered
+  lines in `lib/run-command.mjs` are the Windows-only `.cmd`
+  retry and the spawnSync-throws catch, which cannot run on
+  Linux by design.
+
+- New: `doctor` now checks git is on PATH. `context --changed`,
+  `--staged`, `--new-from-rev` and both hook forms all shell out to
+  git, so a machine without it failed those at use time with git's
+  own error instead of a diagnosis — npm's own `doctor` checks
+  `which git` for the same reason (on Windows git is often
+  installed but not on PATH). It is a warning, never a failure:
+  the core commands work fine without git. The rest of npm
+  doctor's list was checked and not borrowed: a registry ping
+  would make `doctor` fail offline (rejected in round 9 for the
+  same reason), cache checksum validation would need the reads
+  the scan cache exists to avoid, and a "latest version"
+  recommendation is the round-9 newer-version check under
+  another name.
+
+- Fix: an unknown is now named, not just counted — and a symlink to a
+  directory is no longer reported as a file that "could not be read".
+  Dogfooding `context` on ripgrep reported "1 file or directory could
+  not be read", but every file in the repo was readable: the unknown
+  was `HomebrewFormula`, a symlink to `pkg/brew` that the scan
+  deliberately does not follow. The `unreadable` unknown now lists
+  the paths (first five, then "… and N more", also in `--json` as
+  `paths`), and a symlink to a directory is its own
+  `unfollowed-symlink` unknown ("was not followed, so its contents
+  are unknown"). On ripgrep the scan now says exactly that instead of
+  sending the reader hunting for an unreadable file that does not
+  exist.
+
+- Fix: a `build` directory inside the repo's tooling is the build's
+  source, not its output — dogfooding `context` on prettier (9,755
+  files) flagged `scripts/build/` (build.js, builders/,
+  esbuild-plugins/, hand-written and tracked) as generated build
+  output and suggested adding it to `.aiignore`, which would hide
+  the project's build source from the agent. A `build` directory
+  under `scripts/`, `tools/`, `tooling/` or `devtools/` is now
+  exempt; `build/` at the root, under a package, and a `dist/` under
+  `scripts/` are still flagged, and a `dist/` nested inside the
+  exempted tooling is still output. On prettier the score went 95 →
+  96 and the build-output category fell 148.3 KB → 3.92 KB (only the
+  genuine coverage output remains). The demo fixture's build output
+  is a `dist/`, so its verbatim output is unchanged.
+
+- New: a one-click install for Claude Desktop — the repo now ships a
+  `manifest.json` (MCPB, the renamed DXT format: modelcontextprotocol
+  /mcpb, 2,178 stars) and a `.mcpbignore`, so `npx
+  @anthropic-ai/mcpb pack` builds a `.mcpb` bundle the user drags
+  onto Settings → Extensions. Distribution is the bottleneck (14
+  days, 3 unique visitors), and Claude Desktop users previously had
+  no install path at all: `setup` wires Claude Code, Codex, Cursor,
+  Gemini and VS Code, the marketplace is Claude Code only, and the
+  MCP registry is a listing, not an installer. The bundle is just
+  the server — zero dependencies, so there are no node_modules to
+  bundle — and `.mcpbignore` keeps tests, docs and tooling out (493
+  KB → 164 KB, 106 → 27 files). The manifest is valid against the
+  official v0.3 schema (checked offline with ajv), the bundle packs
+  with the official toolchain, and an extracted bundle runs
+  standalone over MCP (7 tools listed). New tests pin the manifest
+  against package.json (name, version, description, license,
+  repository) and against the live server (tool and prompt names,
+  first-sentence descriptions, the prompt template rendered for
+  sample arguments), and the bump script now moves the manifest
+  version with the rest. Honest limit: no Claude Desktop here, so
+  the install click itself is unverified — the local proof is that
+  the manifest validates, the bundle packs, and the bundled server
+  answers.
+
+- New: `setup --hooks` installs the commit-time enforcement as native
+  git hooks with no pre-commit and no husky — it writes
+  `.githooks/pre-commit` and `.githooks/commit-msg` (the same two
+  commands the README's Husky section documents) and sets
+  `core.hooksPath` to `.githooks`, so committing `.githooks/` gives
+  every clone the enforcement. The method is husky's (35,392 stars):
+  the hook is a versioned file, not a config entry. It never
+  overwrites a hook file or a hooks path it did not install, it is
+  idempotent, `--dry-run` previews the files, and `setup --hooks
+  --check` reports whether they are installed. The pre-commit
+  manifest still needs the `pre-commit` binary (absent in this
+  environment — `pre-commit: command not found` — while git works),
+  so a user without it had no one-command install until now. The
+  installed hooks were rehearsed end to end as real git hooks (clean
+  first commit, staged noise blocked at 75/100, fix, re-commit,
+  secret message blocked without printing the value). Note the
+  `npx` call floats to the latest release, which is 0.2.2 until
+  tonight's 0.2.4 ships — 0.2.2 does not know `--staged`, so a hook
+  installed from the README today fails until then; `setup --hooks`
+  ships in 0.2.5, after 0.2.4 is live, so it never sees the gap.
+
+- Fix: the npm package page showed a broken demo image — the
+  `files` whitelist left out `docs/demo.gif` and `llms.txt`, so the
+  README's two relative links 404'd on npmjs.com while rendering
+  fine on GitHub (verified against the published 0.2.2 tarball: 29
+  files, neither in it). Both now ship in the package (+88 KB on a
+  253 KB tarball); a new test pins the invariant, that every
+  relative file the README links is in `npm pack --dry-run`.
+
+- New: `setup` also wires Gemini CLI — it detects the `gemini`
+  binary or an existing `~/.gemini/settings.json` and merges the
+  dev-diagnosis entry under `mcpServers`, the same shape as Claude
+  Code's, and the README documents the copy-paste block for it.
+  Gemini CLI (108,851 stars) is the second-biggest terminal agent
+  after Claude Code, and the README's MCP section only covered
+  Claude Code and Codex — a Gemini user had to translate the shape
+  themselves. The config shape is verified against Gemini CLI's own
+  MCP docs, not guessed.
+
+- New: `--mcp --read-only` serves only the read-only tools, so a host
+  that auto-approves read-only tools can call the server without
+  prompting on every call — and a host that wants a guarantee the
+  server writes nothing gets one. `diagnose_cache` is not listed at
+  all (it runs a build command); `diagnose_context`, `diagnose_all`
+  and `diagnose_secrets` lose their write inputs (`fix`,
+  `buildCommand`, `writeSecretsBaseline`, the scan `cache`) and
+  declare `readOnlyHint: true`. A client that cached the full tool
+  list and calls with `fix: true` anyway gets a tool error, not a
+  write — enforcement is in the call, not just the listing — and the
+  `diagnose_repo` prompt stops telling the agent to preview the fix
+  in this mode. The method is GitHub's official MCP server's
+  `--read-only` mode (34,496 stars); it also closes the annotation
+  gap round 3 deferred, that the two most-used tools could not
+  honestly claim to be read-only while `fix` was on offer.
+
+- Fix: `--changed`, `--changed --staged` and `--new-from-rev` on a repo
+  with no commits yet — HEAD is unborn there, so diffing vs it failed
+  with `cannot list changes vs HEAD: fatal: ambiguous argument
+  'HEAD'` and the command exited 1 with an error instead of a
+  verdict. That is the first commit in a fresh repo — the moment a
+  user installs the pre-commit hook — so the hook could never pass or
+  fail correctly there. The ref now resolves to git's empty tree when
+  HEAD does not exist yet: every staged file is new, and the scope
+  line still reads `vs HEAD`. An explicit ref the user named (a
+  typo'd ref, `--changed=main` on a fresh repo) still fails loudly.
+  Found by the first real end-to-end rehearsal of the hook (see the
+  Husky entry below): the rehearsal's clean first commit hit the
+  error, the fix was verified live through the hook itself, and tests
+  pin the behaviour at the `listChangedFiles` / `refFileSizes` level
+  and at the CLI level (clean first commit 100/100, noisy first
+  commit 75/100, `--new-from-rev` treating everything as new).
+
+- Fix: the README no longer states a test count — it said "436
+  tests" while the suite was already 466, and a count in the README
+  goes stale the next round that adds a test. The suite prints its
+  own count on every run, so there is no number left to rot; a test
+  pins the line so a count cannot creep back in.
+
+- New: the pre-commit hook also works under Husky — the README's
+  Pre-commit hook section now documents the `.husky/pre-commit` and
+  `.husky/commit-msg` scripts (`npx dev-diagnosis-cli context
+  --changed --staged` and `npx dev-diagnosis-cli secrets "$1"`), for
+  JavaScript projects that already use husky instead of the
+  pre-commit framework. The method is husky's: hooks are plain shell
+  scripts in `.husky/`, activated by `core.hooksPath` — no manifest,
+  no second hook manager to install. Both hook paths were rehearsed
+  end to end with the real tools (pre-commit 4.7.0 and husky 9.1.7):
+  clean first commit, staged noise blocked at 75/100, the documented
+  fix, re-commit, secret in the message blocked without ever printing
+  the value. Tests pin the documented commands and run them as real
+  git hooks in a temp repo, so a drifted snippet fails the suite.
+
+- New: `all` also writes its report to the run's Step Summary when it
+  runs inside GitHub Actions — the same Markdown `--report` writes, so
+  the score, the noise list and the fix land on the run page without
+  opening the step log. It is automatic (no flag): the Action sets
+  `GITHUB_STEP_SUMMARY`, the CLI appends to that file, and local runs
+  are unaffected. A write failure warns on stderr and never changes
+  the exit code, and `--json` stdout stays parseable. The method is
+  actions/toolkit's `core.summary` (GitHub's own ToolKit builder for
+  the same file); the report caps its noise list at 20 rows and its
+  review list at 10, so a summary stays far under the platform's 1 MiB
+  per-step cap.
+
+- Fix: the CI, publish and MCP-registry workflows pinned their actions
+  to mutable major-version tags (`actions/checkout@v4`,
+  `actions/setup-node@v4`) and the checkout steps persisted the
+  `GITHUB_TOKEN` into the workspace. A zizmor audit (7,061 stars)
+  flagged all six uses at High confidence plus three
+  `persist-credentials` warnings — a moved tag would run attacker
+  code inside the unattended release pipeline, which publishes to npm
+  with OIDC. Both actions are now pinned to the full commit SHA of
+  their v4 tag (with a `# v4` comment so the version stays readable)
+  and every checkout sets `persist-credentials: false`; actionlint
+  and zizmor re-runs are clean of both findings. Two Low-confidence
+  findings remain and are deliberate: the pack smoke test installs
+  the tarball built in the same job, and no `cache:` input is set
+  anywhere, so there is no package-manager cache to poison on the
+  release-only workflows.
+
 ## 0.2.4 — 2026-11-15
 
 - New: a nested `.aiignore` now works — an `.aiignore` in a

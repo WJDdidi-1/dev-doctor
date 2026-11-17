@@ -56,6 +56,19 @@ test('secrets: runSecretsCheck finds a secret and never carries the value', () =
   assert.ok(!JSON.stringify(check.result).includes(keyValue), 'the result JSON must never contain the matched value');
 });
 
+test('secrets: runSecretsCheck groups the same credential across files', () => {
+  const dir = makeSecretDir();
+  fs.writeFileSync(path.join(dir, 'other.js'), `${keyLine}\n`);
+  const check = runSecretsCheck([path.join(dir, 'config.js'), path.join(dir, 'other.js')]);
+  assert.equal(check.passed, false);
+  // One distinct credential, in two files: the verdict counts the
+  // files, the findings list the distinct secrets.
+  assert.match(check.verdict, /1 possible secret in 2 files/);
+  assert.equal(check.result.findings.length, 1);
+  assert.equal(check.result.findings[0].occurrences, 2);
+  assert.match(check.result.findings[0].reason, /also in 1 more place/);
+});
+
 test('secrets: runSecretsCheck reports a missing file and a directory as errors', () => {
   const dir = makeSecretDir();
   const check = runSecretsCheck([path.join(dir, 'no-such.txt'), dir]);

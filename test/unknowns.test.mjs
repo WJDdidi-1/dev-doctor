@@ -72,15 +72,99 @@ test('unknowns: a file over the secret-scan cap is an unknown, not a clean bill'
   assert.match(entry.detail, /not content-scanned for secrets/);
 });
 
-test('unknowns: a dangling symlink is unreadable, not absent', () => {
+test('unknowns: a dangling symlink is its own unknown, not unreadable', () => {
+  // A link whose target does not exist has nothing to read — calling
+  // it "could not be read" sent a real user hunting for an unreadable
+  // file that did not exist, the same lesson as the unfollowed
+  // directory links (round 79). `just`'s www/man/en and www/man/zh
+  // point at unbuilt docs and showed up this way on a dogfood run.
   const dir = makeRepo({ 'src/a.js': 'x\n' });
   fs.symlinkSync('does-not-exist', path.join(dir, 'dangling.js'));
   const result = scanDirectory(dir);
   assert.equal(result.visibleFilesPct, 100);
-  const entry = result.unknowns.find((u) => u.kind === 'unreadable');
-  assert.ok(entry, 'expected an unreadable unknown');
+  assert.equal(result.unknowns.find((u) => u.kind === 'unreadable'), undefined);
+  const entry = result.unknowns.find((u) => u.kind === 'dangling-symlink');
+  assert.ok(entry, 'expected a dangling-symlink unknown');
   assert.equal(entry.files, 1);
-  assert.match(entry.detail, /could not be read/);
+  assert.match(entry.detail, /does not exist/);
+  assert.doesNotMatch(entry.detail, /could not be read/);
+  // The path is named, not just counted: a count alone sent a real
+  // user hunting with `find` for a file that did not exist.
+  assert.deepEqual(entry.paths, ['dangling.js']);
+  assert.match(entry.detail, /dangling\.js/);
+});
+
+test('unknowns: a symlink to a directory is unfollowed, not unreadable', () => {
+  // ripgrep's HomebrewFormula -> pkg/brew was reported as "1 file or
+  // directory could not be read" — false: the scan chose not to
+  // follow it, and everything in the repo was readable.
+  const dir = makeRepo({ 'src/a.js': 'x\n' });
+  fs.mkdirSync(path.join(dir, 'pkg', 'brew'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'pkg', 'brew', 'formula.rb'), 'x\n');
+  fs.symlinkSync('pkg/brew', path.join(dir, 'HomebrewFormula'));
+  const result = scanDirectory(dir);
+  assert.equal(result.visibleFilesPct, 100);
+  assert.equal(result.unknowns.find((u) => u.kind === 'unreadable'), undefined);
+  const entry = result.unknowns.find((u) => u.kind === 'unfollowed-symlink');
+  assert.ok(entry, 'expected an unfollowed-symlink unknown');
+  assert.equal(entry.files, 1);
+  assert.deepEqual(entry.paths, ['HomebrewFormula']);
+  assert.match(entry.detail, /not followed/);
+  assert.match(entry.detail, /HomebrewFormula/);
+  assert.doesNotMatch(entry.detail, /could not be read/);
+});
+
+test('unknowns: more than five unknown paths cap the list and say how many more', () => {
+  const dir = makeRepo({ 'src/a.js': 'x\n' });
+  for (let i = 0; i < 7; i += 1) {
+    fs.symlinkSync('does-not-exist', path.join(dir, `dangling${i}.js`));
+  }
+  const result = scanDirectory(dir);
+  const entry = result.unknowns.find((u) => u.kind === 'dangling-symlink');
+  assert.ok(entry, 'expected a dangling-symlink unknown');
+  assert.equal(entry.files, 7);
+  assert.equal(entry.paths.length, 5);
+  assert.match(entry.detail, /… and 2 more/);
+  assert.match(entry.detail, /dangling0\.js/);
+});
+
+test('unknowns: the CLI --json names the unfollowed symlink path', () => {
+  const dir = makeRepo({ 'src/a.js': 'x\n' });
+  fs.mkdirSync(path.join(dir, 'pkg'), { recursive: true });
+  fs.symlinkSync('pkg', path.join(dir, 'link-dir'));
+  const result = run(['context', dir, '--json']);
+  assert.equal(result.status, 0);
+  const parsed = JSON.parse(result.stdout);
+  const entry = parsed.unknowns.find((u) => u.kind === 'unfollowed-symlink');
+  assert.ok(entry, 'expected an unfollowed-symlink unknown');
+  assert.deepEqual(entry.paths, ['link-dir']);
+});
+
+test('unknowns: the CLI --json names the dangling symlink path', () => {
+  const dir = makeRepo({ 'src/a.js': 'x\n' });
+  fs.symlinkSync('does-not-exist', path.join(dir, 'dangling.js'));
+  const result = run(['context', dir, '--json']);
+  assert.equal(result.status, 0);
+  const parsed = JSON.parse(result.stdout);
+  assert.equal(parsed.unknowns.find((u) => u.kind === 'unreadable'), undefined);
+  const entry = parsed.unknowns.find((u) => u.kind === 'dangling-symlink');
+  assert.ok(entry, 'expected a dangling-symlink unknown');
+  assert.deepEqual(entry.paths, ['dangling.js']);
+});
+
+test('unknowns: a cached rescan still names the unfollowed symlink', () => {
+  // The walk runs on a cached scan too, so the unknowns are
+  // re-derived, not restored from the cache — verify the path
+  // survives the second run.
+  const dir = makeRepo({ 'src/a.js': 'x\n' });
+  fs.mkdirSync(path.join(dir, 'pkg'), { recursive: true });
+  fs.symlinkSync('pkg', path.join(dir, 'link-dir'));
+  const first = JSON.parse(run(['context', dir, '--json', '--cache']).stdout);
+  const second = JSON.parse(run(['context', dir, '--json', '--cache']).stdout);
+  assert.ok(second.cached, 'expected the second run to reuse the cache');
+  assert.equal(first.unknowns.length, 1);
+  assert.deepEqual(first.unknowns, second.unknowns);
+  assert.deepEqual(second.unknowns[0].paths, ['link-dir']);
 });
 
 test('unknowns: a symlink to a real file is counted as that file', () => {

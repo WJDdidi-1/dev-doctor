@@ -17,7 +17,7 @@
 # is what scene 3 re-runs against. The method is VHS's (charmbracelet/vhs):
 # the demo is code, re-runnable, and CI keeps it up to date.
 
-Label v0.2.4
+Label v0.2.5
 Output docs/demo.gif
 
 Title "Your AI agent just read" "≈ 439k tokens of garbage." "one command finds it — one fix clears it"

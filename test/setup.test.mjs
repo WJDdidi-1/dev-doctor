@@ -27,8 +27,8 @@ function writeFakeBinary(dir, name) {
 }
 
 // A HOME with a Claude config (another server, no dev-diagnosis) and a
-// Codex config (no dev-diagnosis section). Cursor and VS Code have no
-// config and no binary, so they are not detected.
+// Codex config (no dev-diagnosis section). Cursor, Gemini CLI and VS
+// Code have no config and no binary, so they are not detected.
 function fixtureHome() {
   const home = tempDir('dev-diagnosis-setup-home-');
   fs.writeFileSync(path.join(home, '.claude.json'), JSON.stringify({
@@ -99,8 +99,7 @@ test('setup: a detected binary with no config gets a created config', () => {
   assert.deepEqual(created, { mcpServers: { 'dev-diagnosis': { command: 'dev-diagnosis', args: ['--mcp'] } } });
 });
 
-test('setup: VS Code settings merge under mcp.servers and keep other settings', () => {
-  const home = tempDir('dev-diagnosis-setup-vscode-');
+test('setup: VS Code settings merge under mcp.servers and keep other settings', () => {  const home = tempDir('dev-diagnosis-setup-vscode-');
   const fakeBin = tempDir('dev-diagnosis-setup-vsbin-');
   writeFakeBinary(fakeBin, 'code');
   const env = envFor(home, fakeBin);
@@ -116,6 +115,29 @@ test('setup: VS Code settings merge under mcp.servers and keep other settings', 
   const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
   assert.equal(settings['editor.fontSize'], 14);
   assert.deepEqual(settings.mcp.servers['dev-diagnosis'], { command: 'dev-diagnosis', args: ['--mcp'] });
+});
+
+test('setup: Gemini CLI settings merge under mcpServers and keep other entries', () => {
+  const home = tempDir('dev-diagnosis-setup-gemini-');
+  const fakeBin = tempDir('dev-diagnosis-setup-geminibin-');
+  writeFakeBinary(fakeBin, 'gemini');
+  const env = envFor(home, fakeBin);
+  // Gemini CLI keeps its MCP servers in ~/.gemini/settings.json under
+  // mcpServers — the same shape as Claude Code's .mcp.json, so the
+  // generic JSON merge covers it; this pins the path and the key.
+  const settingsPath = path.join(home, '.gemini', 'settings.json');
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+  fs.writeFileSync(settingsPath, JSON.stringify({
+    theme: 'dark',
+    mcpServers: { other: { command: 'other', args: [] } },
+  }, null, 2));
+  const result = run(['setup'], { env });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Gemini CLI: merged/);
+  const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+  assert.equal(settings.theme, 'dark');
+  assert.deepEqual(settings.mcpServers.other, { command: 'other', args: [] });
+  assert.deepEqual(settings.mcpServers['dev-diagnosis'], { command: 'dev-diagnosis', args: ['--mcp'] });
 });
 
 test('setup: --check reports not wired (exit 1) then wired (exit 0)', () => {
