@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { runCommand } from '../lib/run-command.mjs';
+import { cmdMissingCommandError, runCommand } from '../lib/run-command.mjs';
 
 // The build-command runner, tested on its own: the cache check trusts
 // it with real builds, and a hanging build must come back as a timed-out
@@ -42,6 +42,20 @@ test('runCommand: a missing binary is a spawn error, not a crash', () => {
   assert.equal(result.ok, false);
   assert.equal(result.status, null);
   assert.match(result.error, /ENOENT/);
+});
+
+test('runCommand: cmd.exe "not recognized" means the command never ran', () => {
+  // Pins the Windows-only retry path on Linux: a missing binary
+  // retried through cmd.exe comes back as exit 1 with this stderr,
+  // and runCommand must translate it back to an ENOENT spawn error
+  // instead of reporting "exit 1".
+  assert.equal(
+    cmdMissingCommandError('definitely-not-a-real-command-xyz', "'definitely-not-a-real-command-xyz' is not recognized as an internal or external command,\noperable program or batch file.\n"),
+    'spawn definitely-not-a-real-command-xyz ENOENT',
+  );
+  assert.equal(cmdMissingCommandError('npm', ''), null);
+  assert.equal(cmdMissingCommandError('npm', 'some other failure\n'), null);
+  assert.equal(cmdMissingCommandError('npm', null), null);
 });
 
 test('runCommand: a command that outlives its timeout comes back as an error, fast', () => {

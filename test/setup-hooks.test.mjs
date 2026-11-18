@@ -81,6 +81,10 @@ test('setup --hooks: planHooks refuses a hook file it did not install', () => {
   const plan = planHooks({ cwd: repo, run: fakeRun(repo) });
   assert.equal(plan.status, 'foreign-hook');
   assert.match(plan.note, /\.githooks\/pre-commit/);
+  // The note is a display string with git-style forward slashes on
+  // every platform — a backslash here would mean path.join leaked a
+  // Windows separator into user-facing output.
+  assert.doesNotMatch(plan.note, /\\/);
 });
 
 test('setup --hooks: planHooks completes a partial install (ours, path unset)', () => {
@@ -131,7 +135,12 @@ test('setup --hooks: --dry-run previews without writing, install writes 755 file
   for (const name of ['pre-commit', 'commit-msg']) {
     const file = path.join(repo, '.githooks', name);
     assert.equal(fs.readFileSync(file, 'utf8'), hookScript(name));
-    assert.equal(fs.statSync(file).mode & 0o777, 0o755);
+    // Windows has no POSIX mode bits — chmod is a no-op there and the
+    // mode reads back 0o666, so only pin 0755 where modes mean
+    // something. Git for Windows runs the hooks regardless.
+    if (process.platform !== 'win32') {
+      assert.equal(fs.statSync(file).mode & 0o777, 0o755);
+    }
   }
   assert.equal(git(repo, 'config', '--get', 'core.hooksPath').trim(), '.githooks');
 

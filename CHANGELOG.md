@@ -331,6 +331,23 @@
   anywhere, so there is no package-manager cache to poison on the
   release-only workflows.
 
+- Fix: the 0.2.5 batch's own new tests failed on Windows and macOS
+  CI (7/12 jobs red), all in tests the Linux suite cannot catch. The
+  `.mcpbignore` check split on LF while a Windows checkout hands it
+  CRLF (pinned `text eol=lf` in `.gitattributes`, and the test now
+  splits on either ending); the pack test spawned bare `npm`, which
+  is an `npm.cmd` shim Windows cannot spawn without a shell; a
+  missing binary retried through cmd.exe came back as "exit 1"
+  instead of a spawn error (cmd.exe's "not recognized" text is now
+  translated back to ENOENT); the foreign-hook note used
+  `path.join`, so it read `.githooks\pre-commit` on Windows (now
+  forward slashes, as git prints them); and the hook file-mode
+  assertion assumed POSIX mode bits, which Windows does not have.
+  The scan-cache timing bar moved from 25% to 40% of fresh with the
+  faster of two cached runs, after a loaded macOS runner measured
+  29% and failed the suite on one slow sample — 40% is still ≥2.5×
+  faster, and a cache that re-read the files would measure ~100%.
+
 ## 0.2.4 — 2026-11-15
 
 - New: a nested `.aiignore` now works — an `.aiignore` in a

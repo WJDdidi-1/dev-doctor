@@ -10,3 +10,8 @@ skills/*/SKILL.md text eol=lf
 # a Windows checkout must not convert it to CRLF, or the parser sees
 # zero hooks (the 2026-11-15 Windows CI failures).
 .pre-commit-hooks.yaml text eol=lf
+# The mcpb test splits this file on LF to check its entries; a Windows
+# checkout must not convert it to CRLF, or every entry carries a \r
+# and the test fails (the 2026-11-17 Windows CI failures). The test
+# itself is also CRLF-tolerant, so either guard alone would do.
+.mcpbignore text eol=lf

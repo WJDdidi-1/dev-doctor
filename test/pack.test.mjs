@@ -16,9 +16,16 @@ const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
  * same README rendered fine on GitHub.
  */
 test('pack: every relative file the README links ships in the npm tarball', () => {
-  const packed = spawnSync('npm', ['pack', '--dry-run', '--json'], { cwd: root, encoding: 'utf8' });
+  // On Windows `npm` is an `npm.cmd` shim, which spawnSync cannot run
+  // without a shell — a bare 'npm' fails to spawn (status null), so
+  // name the shim there.
+  const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  const packed = spawnSync(npm, ['pack', '--dry-run', '--json'], { cwd: root, encoding: 'utf8' });
   assert.equal(packed.status, 0, packed.stderr);
-  const files = new Set(JSON.parse(packed.stdout)[0].files.map((file) => file.path));
+  // npm lists tarball paths with forward slashes, but normalise
+  // anyway: a backslash-separated listing must not fail the check
+  // for a file that does ship.
+  const files = new Set(JSON.parse(packed.stdout)[0].files.map((file) => file.path.replace(/\\/g, '/')));
   const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
   const links = [...readme.matchAll(/\]\(([^)]+)\)/g)].map((match) => match[1]);
   const relative = links.filter((link) => !link.startsWith('http') && !link.startsWith('#') && !link.startsWith('mailto:'));

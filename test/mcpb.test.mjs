@@ -43,11 +43,25 @@ test('mcpb: manifest fields agree with package.json and the entry point exists',
 
 test('mcpb: .mcpbignore keeps tests and tooling out of the bundle', () => {
   const ignore = fs.readFileSync(path.join(root, '.mcpbignore'), 'utf8');
+  // A Windows checkout converts text files to CRLF unless
+  // .gitattributes pins them (see the .mcpbignore eol=lf line there);
+  // split on either ending so the check reads the entries, not the
+  // line endings.
+  const entries = ignore.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   for (const entry of ['test/', '.github/', 'scripts/', 'examples/', 'docs/']) {
-    assert.ok(ignore.split('\n').includes(entry), `.mcpbignore must exclude ${entry}`);
+    assert.ok(entries.includes(entry), `.mcpbignore must exclude ${entry}`);
   }
   assert.doesNotMatch(ignore, /^bin\//m);
   assert.doesNotMatch(ignore, /^lib\//m);
+});
+
+test('mcpb: .mcpbignore entries read the same with CRLF line endings', () => {
+  // Pins the CRLF tolerance above on Linux: a Windows checkout of
+  // the same file must parse to the same entry list.
+  const ignore = fs.readFileSync(path.join(root, '.mcpbignore'), 'utf8');
+  const lf = ignore.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const crlf = ignore.replaceAll('\n', '\r\n').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  assert.deepEqual(crlf, lf);
 });
 
 // A minimal scripted MCP client: send the requests, close stdin, and
