@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { runCommand } from '../lib/run-command.mjs';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -17,11 +17,13 @@ const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
  */
 test('pack: every relative file the README links ships in the npm tarball', () => {
   // On Windows `npm` is an `npm.cmd` shim, which spawnSync cannot run
-  // without a shell — a bare 'npm' fails to spawn (status null), so
-  // name the shim there.
-  const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  const packed = spawnSync(npm, ['pack', '--dry-run', '--json'], { cwd: root, encoding: 'utf8' });
-  assert.equal(packed.status, 0, packed.stderr);
+  // without a shell — and naming the shim is not enough either: a bare
+  // spawnSync('npm.cmd', ...) still comes back with status null on
+  // all four Windows jobs (CI run #62). lib/run-command.mjs retries
+  // a failed direct spawn through cmd.exe, which is the path its own
+  // test suite pins on Windows, so run npm pack through it.
+  const packed = runCommand(['npm', 'pack', '--dry-run', '--json'], { cwd: root });
+  assert.equal(packed.status, 0, packed.stderr || packed.error);
   // npm lists tarball paths with forward slashes, but normalise
   // anyway: a backslash-separated listing must not fail the check
   // for a file that does ship.
