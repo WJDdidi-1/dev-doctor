@@ -336,7 +336,11 @@
   `.mcpbignore` check split on LF while a Windows checkout hands it
   CRLF (pinned `text eol=lf` in `.gitattributes`, and the test now
   splits on either ending); the pack test spawned bare `npm`, which
-  is an `npm.cmd` shim Windows cannot spawn without a shell; a
+  is an `npm.cmd` shim Windows cannot spawn without a shell — and
+  naming the shim was not enough either (status null on all four
+  Windows jobs in CI run #62), so the test now runs `npm pack`
+  through `lib/run-command.mjs`, whose cmd.exe retry is the path its
+  own test suite pins on Windows; a
   missing binary retried through cmd.exe came back as "exit 1"
   instead of a spawn error (cmd.exe's "not recognized" text is now
   translated back to ENOENT); the foreign-hook note used
